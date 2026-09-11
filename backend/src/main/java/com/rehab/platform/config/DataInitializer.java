@@ -40,6 +40,7 @@ public class DataInitializer implements CommandLineRunner {
     private final InsuranceSettlementRepository settlementRepository;
     private final TimelineEventRepository timelineRepository;
     private final CorrectionTaskRepository correctionTaskRepository;
+    private final PainEscalationRepository painEscalationRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.upload-dir}")
@@ -200,6 +201,51 @@ public class DataInitializer implements CommandLineRunner {
                         "依据：" + adj.getReason(), "adjustment", adj.getId(), date.plusDays(1).atTime(9, 30));
                 tl(p, TimelineEventType.ALERT_RESOLVED, nurse, "预警解除：疼痛升高",
                         alert.getMessage(), "alert", alert.getId(), date.plusDays(1).atTime(9, 0));
+
+                // 疼痛升级处置（完整闭环：暂停动作 → 家属补充 → 护士评估转医生 → 医生处置 → 风险解除）
+                PainEscalation esc = new PainEscalation();
+                esc.setPatient(p);
+                esc.setPrescription(rx1);
+                esc.setTrainingLog(log);
+                esc.setAlert(alert);
+                esc.setTriggers("PAIN_OVER_THRESHOLD");
+                esc.setPainScore(7);
+                esc.setSuspendedItemIds("[" + rx1.getItems().get(0).getId() + "]");
+                esc.setSuspendedItemNames("桥式运动");
+                esc.setStatus(EscalationStatus.CLEARED);
+                esc.setFamilySymptoms("练完桥式运动后右肩疼痛明显，皮肤发红，无肿胀麻木，夜间不痛");
+                esc.setFamilyMedication("外用双氯芬酸二乙胺乳膏（扶他林），未口服止痛药");
+                esc.setFamilyFell(false);
+                esc.setFamilyReportedBy(family.getName());
+                esc.setFamilyReportedAt(date.atTime(20, 20));
+                esc.setNurseAssessment("电话评估：疼痛局限于右肩，无肿胀麻木、无夜间痛醒、否认摔倒，考虑训练强度过大所致，转医生复核确认。");
+                esc.setNurseDecision(NurseDecision.ESCALATE_DOCTOR.name());
+                esc.setNurse(nurse);
+                esc.setNurseAssessedAt(date.atTime(21, 0));
+                esc.setDoctorDispositions("REST,ICE");
+                esc.setDoctorConclusion("考虑肩部软组织劳损。处置：暂停桥式运动 2 天，局部冰敷每日 3 次、每次 15 分钟；其余动作减量继续。2 天后疼痛缓解则解除暂停。");
+                esc.setDoctor(doctor);
+                esc.setDoctorReviewedAt(date.plusDays(1).atTime(9, 30));
+                esc.setClearedBy(doctor.getName());
+                esc.setClearedAt(date.plusDays(2).atTime(10, 0));
+                esc.setClearNote("复评疼痛降至 3 分，红肿消退，恢复桥式运动（按降强度处方执行）。");
+                esc.setCreatedAt(date.atTime(20, 5));
+                painEscalationRepository.save(esc);
+                tl(p, TimelineEventType.PAIN_ESCALATION_CREATED, null, "疼痛升级：暂停「桥式运动」",
+                        "触发原因：训练后疼痛超阈值（训练后疼痛 7 分）。平台已暂停相关动作，待家属补充症状/用药/是否摔倒后由康复护士电话评估。",
+                        "painEscalation", esc.getId(), date.atTime(20, 5));
+                tl(p, TimelineEventType.ESCALATION_FAMILY_REPORT, family, "家属补充症状（疼痛升级）",
+                        "症状：" + esc.getFamilySymptoms() + "；用药：" + esc.getFamilyMedication() + "；是否摔倒：否。已转康复护士电话评估。",
+                        "painEscalation", esc.getId(), date.atTime(20, 20));
+                tl(p, TimelineEventType.ESCALATION_NURSE_ASSESSMENT, nurse, "护士电话评估：转医生复核",
+                        "评估内容：" + esc.getNurseAssessment() + "。相关动作保持暂停，等待医生复核处置。",
+                        "painEscalation", esc.getId(), date.atTime(21, 0));
+                tl(p, TimelineEventType.ESCALATION_DOCTOR_DISPOSITION, doctor, "医生处置结论：休息、冰敷",
+                        esc.getDoctorConclusion() + "。结论已同步治疗师与家属；「桥式运动」保持暂停，待风险解除后恢复。",
+                        "painEscalation", esc.getId(), date.plusDays(1).atTime(9, 30));
+                tl(p, TimelineEventType.ESCALATION_CLEARED, doctor, "风险解除：「桥式运动」恢复训练",
+                        esc.getClearNote() + "。相关动作重新进入每日训练任务。",
+                        "painEscalation", esc.getId(), date.plusDays(2).atTime(10, 0));
             }
         }
 
@@ -303,10 +349,11 @@ public class DataInitializer implements CommandLineRunner {
         s.setStatus(SettlementStatus.CONFIRMED);
         s.setCreatedBy(therapist.getName());
         s.setCreatedAt(today.minusDays(1).atTime(10, 0));
+        s.setInterruptionNote(today.minusDays(8) + " 疼痛升级中断（训练后疼痛超阈值）：暂停「桥式运动」，处置：休息、冰敷（风险已解除）");
         settlementRepository.save(s);
         tl(p, TimelineEventType.SETTLEMENT_CREATED, therapist,
                 "生成医保结算单（" + s.getPeriodStart() + " ~ " + s.getPeriodEnd() + "）",
-                "居家训练 ¥498.00 + 复诊评估 ¥30.00 + 线下治疗 ¥65.00 = 合计 ¥593.00；按「城乡居民医保」报销比例 70%，报销 ¥415.10，自付 ¥177.90",
+                "居家训练 ¥498.00 + 复诊评估 ¥30.00 + 线下治疗 ¥65.00 = 合计 ¥593.00；按「城乡居民医保」报销比例 70%，报销 ¥415.10，自付 ¥177.90；已标注 1 次疼痛升级中断",
                 "settlement", s.getId(), today.minusDays(1).atTime(10, 0));
         return p;
     }
@@ -363,11 +410,65 @@ public class DataInitializer implements CommandLineRunner {
                                 "步态对称性、患肢负重耐受", true, "340200023", "25")
                 ), today.minusDays(14).atTime(10, 0));
 
+        TrainingLog logD2 = null;
         for (int d = 14; d >= 1; d--) {
-            trainingLog(p, rx, today.minusDays(d), 80 + (d % 3) * 6 > 100 ? 100 : 80 + (d % 3) * 6,
-                    2, 3, null, d % 6 == 0 ? "走路比上周稳了" : null, true, false);
+            if (d == 2) {
+                // 疼痛升级事件：训练后疼痛 7 分超阈值 + 肿胀麻木
+                logD2 = trainingLog(p, rx, today.minusDays(d), 60, 4, 7, null,
+                        "练完直腿抬高后右髋又肿又麻，疼痛明显加重", true, false);
+                logD2.setSwellingNumbness(true);
+                trainingLogRepository.save(logD2);
+            } else {
+                trainingLog(p, rx, today.minusDays(d), 80 + (d % 3) * 6 > 100 ? 100 : 80 + (d % 3) * 6,
+                        2, 3, null, d % 6 == 0 ? "走路比上周稳了" : null, true, false);
+            }
         }
         treatment(p, therapist, today.minusDays(7), "运动疗法（门诊）", "340200020", true, "40", "复诊当日门诊 PT");
+
+        // 疼痛升级处置（进行中：家属已补充 → 护士已转医生 → 医生已处置「休息+冰敷」，等待风险解除）
+        Alert escAlert = alert(p, AlertType.PAIN_ESCALATION, AlertLevel.MEDIUM, AlertStatus.RESOLVED,
+                "疼痛升级（训练后疼痛超阈值、出现肿胀/麻木）：已暂停「直腿抬高训练、助行器部分负重步行」，等待家属补充症状/用药/是否摔倒",
+                logD2.getId(), today.minusDays(2).atTime(20, 5), nurse, today.minusDays(2).atTime(21, 0),
+                today.minusDays(1).atTime(10, 0));
+        escAlert.setDoctor(doctor);
+        alertRepository.save(escAlert);
+        PainEscalation esc2 = new PainEscalation();
+        esc2.setPatient(p);
+        esc2.setPrescription(rx);
+        esc2.setTrainingLog(logD2);
+        esc2.setAlert(escAlert);
+        esc2.setTriggers("PAIN_OVER_THRESHOLD,SWELLING_NUMBNESS");
+        esc2.setPainScore(7);
+        esc2.setSuspendedItemIds("[" + rx.getItems().get(1).getId() + "," + rx.getItems().get(3).getId() + "]");
+        esc2.setSuspendedItemNames("直腿抬高训练、助行器部分负重步行");
+        esc2.setStatus(EscalationStatus.DISPOSITION_ACTIVE);
+        esc2.setFamilySymptoms("右髋肿胀，大腿前侧发麻，走路时加重，休息后稍缓解，夜间不痛醒");
+        esc2.setFamilyMedication("口服布洛芬缓释胶囊 0.3g，每日 2 次");
+        esc2.setFamilyFell(false);
+        esc2.setFamilyReportedBy(family2.getName());
+        esc2.setFamilyReportedAt(today.minusDays(2).atTime(20, 30));
+        esc2.setNurseAssessment("电话评估：右髋肿胀伴麻木，VAS 7 分，已指导冰敷并暂停负重训练；因涉及术后髋部症状，转医生复核。");
+        esc2.setNurseDecision(NurseDecision.ESCALATE_DOCTOR.name());
+        esc2.setNurse(nurse);
+        esc2.setNurseAssessedAt(today.minusDays(2).atTime(21, 0));
+        esc2.setDoctorDispositions("REST,ICE");
+        esc2.setDoctorConclusion("考虑术后软组织反应性肿胀，未见脱位征象。处置：暂停直腿抬高与负重步行 3 天，抬高患肢、局部冰敷每日 3 次；若麻木持续超过 24 小时或加重，立即门诊复查。");
+        esc2.setDoctor(doctor);
+        esc2.setDoctorReviewedAt(today.minusDays(1).atTime(10, 0));
+        esc2.setCreatedAt(today.minusDays(2).atTime(20, 5));
+        painEscalationRepository.save(esc2);
+        tl(p, TimelineEventType.PAIN_ESCALATION_CREATED, null, "疼痛升级：暂停「直腿抬高训练、助行器部分负重步行」",
+                "触发原因：训练后疼痛超阈值、出现肿胀/麻木（训练后疼痛 7 分）。平台已暂停相关动作，待家属补充症状/用药/是否摔倒后由康复护士电话评估。",
+                "painEscalation", esc2.getId(), today.minusDays(2).atTime(20, 5));
+        tl(p, TimelineEventType.ESCALATION_FAMILY_REPORT, family2, "家属补充症状（疼痛升级）",
+                "症状：" + esc2.getFamilySymptoms() + "；用药：" + esc2.getFamilyMedication() + "；是否摔倒：否。已转康复护士电话评估。",
+                "painEscalation", esc2.getId(), today.minusDays(2).atTime(20, 30));
+        tl(p, TimelineEventType.ESCALATION_NURSE_ASSESSMENT, nurse, "护士电话评估：转医生复核",
+                "评估内容：" + esc2.getNurseAssessment() + "。相关动作保持暂停，等待医生复核处置。",
+                "painEscalation", esc2.getId(), today.minusDays(2).atTime(21, 0));
+        tl(p, TimelineEventType.ESCALATION_DOCTOR_DISPOSITION, doctor, "医生处置结论：休息、冰敷",
+                esc2.getDoctorConclusion() + "。结论已同步治疗师与家属；「直腿抬高训练、助行器部分负重步行」保持暂停，待风险解除后恢复。",
+                "painEscalation", esc2.getId(), today.minusDays(1).atTime(10, 0));
         return p;
     }
 
@@ -576,6 +677,26 @@ public class DataInitializer implements CommandLineRunner {
                 today.atTime(7, 0), null, null, null);
         tl(p, TimelineEventType.ALERT_CREATED, null, "触发预警：连续漏练（高风险）",
                 missed.getMessage() + "。已推送康复护士电话随访队列。", "alert", missed.getId(), today.atTime(7, 0));
+
+        // 疼痛升级处置（待家属补充：-4 天打卡疼痛 6 分达阈值，平台已暂停「坐位站起训练」）
+        Alert escAlert5 = alert(p, AlertType.PAIN_ESCALATION, AlertLevel.MEDIUM, AlertStatus.PENDING,
+                "疼痛升级（训练后疼痛超阈值）：已暂停「坐位站起训练」，等待家属补充症状/用药/是否摔倒",
+                logD4.getId(), today.minusDays(4).atTime(20, 6), null, null, null);
+        PainEscalation esc5 = new PainEscalation();
+        esc5.setPatient(p);
+        esc5.setPrescription(rx);
+        esc5.setTrainingLog(logD4);
+        esc5.setAlert(escAlert5);
+        esc5.setTriggers("PAIN_OVER_THRESHOLD");
+        esc5.setPainScore(6);
+        esc5.setSuspendedItemIds("[" + rx.getItems().get(0).getId() + "]");
+        esc5.setSuspendedItemNames("坐位站起训练");
+        esc5.setStatus(EscalationStatus.PENDING_FAMILY_INFO);
+        esc5.setCreatedAt(today.minusDays(4).atTime(20, 6));
+        painEscalationRepository.save(esc5);
+        tl(p, TimelineEventType.PAIN_ESCALATION_CREATED, null, "疼痛升级：暂停「坐位站起训练」",
+                "触发原因：训练后疼痛超阈值（训练后疼痛 6 分）。平台已暂停相关动作，待家属补充症状/用药/是否摔倒后由康复护士电话评估。",
+                "painEscalation", esc5.getId(), today.minusDays(4).atTime(20, 6));
 
         // ---- 纠错任务 C（连续未掌握 1 次：再一次未掌握将触发自动线下复评） ----
         PrescriptionItem stepItem = rx.getItems().get(1); // 原地踏步训练

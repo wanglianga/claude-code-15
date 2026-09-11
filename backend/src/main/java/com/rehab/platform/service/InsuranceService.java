@@ -30,6 +30,7 @@ public class InsuranceService {
     private final AssessmentRepository assessmentRepository;
     private final PrescriptionRepository prescriptionRepository;
     private final TrainingLogRepository trainingLogRepository;
+    private final PainEscalationRepository painEscalationRepository;
     private final PatientService patientService;
     private final TimelineService timelineService;
     private final ObjectMapper objectMapper;
@@ -145,6 +146,21 @@ public class InsuranceService {
         }
 
         BigDecimal total = homeTraining.add(assessmentAmount).add(outpatient);
+
+        // 4. 疼痛升级中断标注（不计费，仅留痕：中断日期、原因、暂停动作、处置方式）
+        List<PainEscalation> interruptions = painEscalationRepository.findByPatientIdAndCreatedAtBetween(
+                patientId, req.periodStart().atStartOfDay(), req.periodEnd().plusDays(1).atStartOfDay());
+        String interruptionNote = null;
+        if (!interruptions.isEmpty()) {
+            interruptionNote = interruptions.stream()
+                    .map(e -> e.getCreatedAt().toLocalDate() + " 疼痛升级中断（"
+                            + PainEscalationService.triggerLabels(e.getTriggers()) + "）：暂停「"
+                            + e.getSuspendedItemNames() + "」，处置："
+                            + PainEscalationService.dispositionLabels(e.getDoctorDispositions())
+                            + "（" + e.getStatus().getLabel() + "）")
+                    .collect(java.util.stream.Collectors.joining("；"));
+            details.add(detail("训练中断标注（不计费）", "-", interruptionNote, BigDecimal.ZERO, false));
+        }
         double ratio = INSURANCE_RATIOS.getOrDefault(
                 patient.getInsuranceType() == null ? "自费" : patient.getInsuranceType(), 0.0);
         // 仅可报销项目参与报销：居家训练 + 复诊评估 + 标记可报销的线下治疗
@@ -170,6 +186,7 @@ public class InsuranceService {
         settlement.setReimbursableAmount(reimbursable);
         settlement.setSelfPayAmount(selfPay);
         settlement.setDetailJson(toJson(details));
+        settlement.setInterruptionNote(interruptionNote);
         settlement.setCreatedBy(SecurityUtils.currentUser().getName());
         InsuranceSettlement saved = settlementRepository.save(settlement);
 
@@ -177,7 +194,8 @@ public class InsuranceService {
                 "生成医保结算单（" + req.periodStart() + " ~ " + req.periodEnd() + "）",
                 "居家训练 ¥" + homeTraining + " + 复诊评估 ¥" + assessmentAmount + " + 线下治疗 ¥" + outpatient
                         + " = 合计 ¥" + total + "；按「" + patient.getInsuranceType() + "」报销比例 "
-                        + (int) (ratio * 100) + "%，报销 ¥" + reimbursable + "，自付 ¥" + selfPay,
+                        + (int) (ratio * 100) + "%，报销 ¥" + reimbursable + "，自付 ¥" + selfPay
+                        + (interruptionNote == null ? "" : "；已标注 " + interruptions.size() + " 次疼痛升级中断"),
                 "settlement", saved.getId());
         return saved;
     }

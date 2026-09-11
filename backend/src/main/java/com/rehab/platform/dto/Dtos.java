@@ -98,7 +98,33 @@ public final class Dtos {
             String familyNote,
             Boolean companionAvailable,
             Boolean compensationObserved,
+            Boolean swellingNumbness,
+            Boolean nightPainWorse,
+            List<Long> painItemIds,
             LocalDate logDate) {
+    }
+
+    /** 家属补充：症状 / 用药 / 是否摔倒 */
+    public record FamilyReportRequest(@NotBlank(message = "请补充症状表现") String symptoms,
+                                      @NotBlank(message = "请填写用药情况") String medication,
+                                      @NotNull(message = "请说明是否摔倒") Boolean fell,
+                                      String fellDetail) {
+    }
+
+    /** 护士电话评估 */
+    public record NurseAssessmentRequest(@NotBlank(message = "请填写电话评估内容") String content,
+                                         @NotNull(message = "请选择评估结论") NurseDecision decision) {
+    }
+
+    /** 医生复核处置 */
+    public record DoctorDispositionRequest(
+            @NotNull(message = "请选择处置方式") List<Disposition> dispositions,
+            @NotBlank(message = "请填写医生介入结论") String conclusion,
+            LocalDate reviewDate) {
+    }
+
+    /** 解除风险（恢复动作） */
+    public record ClearRiskRequest(String note) {
     }
 
     public record FeedbackRequest(@NotBlank(message = "反馈内容不能为空") String feedback) {

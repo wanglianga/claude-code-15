@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Patients from './pages/Patients'
 import PatientDetail from './pages/PatientDetail'
 import Alerts from './pages/Alerts'
+import Escalations from './pages/Escalations'
 import RiskBoard from './pages/RiskBoard'
 import ReviewWorkspace from './pages/ReviewWorkspace'
 import FamilyToday from './pages/FamilyToday'
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="patients/:id" element={<Guard roles={['THERAPIST', 'ADMIN', 'NURSE', 'DOCTOR', 'FAMILY']}><PatientDetail /></Guard>} />
             <Route path="patients/:id/review" element={<Guard roles={['THERAPIST', 'ADMIN']}><ReviewWorkspace /></Guard>} />
             <Route path="alerts" element={<Guard roles={['NURSE', 'DOCTOR', 'THERAPIST', 'ADMIN']}><Alerts /></Guard>} />
+            <Route path="escalations" element={<Guard roles={['NURSE', 'DOCTOR', 'THERAPIST', 'ADMIN']}><Escalations /></Guard>} />
             <Route path="risk-board" element={<Guard roles={['THERAPIST', 'NURSE', 'DOCTOR', 'ADMIN']}><RiskBoard /></Guard>} />
             <Route path="today" element={<Guard roles={['FAMILY']}><FamilyToday /></Guard>} />
           </Route>

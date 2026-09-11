@@ -7,6 +7,7 @@ import com.rehab.platform.enums.Role;
 import com.rehab.platform.model.Alert;
 import com.rehab.platform.model.Patient;
 import com.rehab.platform.repository.AlertRepository;
+import com.rehab.platform.repository.PainEscalationRepository;
 import com.rehab.platform.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ public class DashboardService {
 
     private final PatientRepository patientRepository;
     private final AlertRepository alertRepository;
+    private final PainEscalationRepository painEscalationRepository;
     private final StatsService statsService;
 
     /** 工作台汇总数据（按角色） */
@@ -53,6 +55,9 @@ public class DashboardService {
         result.put("openAlertCount", openAlerts.size());
         result.put("pendingAlertCount", openAlerts.stream().filter(a -> a.getStatus() == AlertStatus.PENDING).count());
         result.put("escalatedCount", openAlerts.stream().filter(a -> a.getStatus() == AlertStatus.ESCALATED).count());
+        // 疼痛升级处置中（动作暂停未解除）的数量
+        result.put("openEscalationCount",
+                painEscalationRepository.countByStatusNot(com.rehab.platform.enums.EscalationStatus.CLEARED));
 
         // 患者卡片（含风险）
         List<Map<String, Object>> cards = patients.stream().map(p -> {

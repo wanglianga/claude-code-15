@@ -2,7 +2,7 @@ import React from 'react'
 import { Layout, Menu, Dropdown, Tag } from 'antd'
 import {
   DashboardOutlined, TeamOutlined, AlertOutlined, FundOutlined,
-  ScheduleOutlined, LogoutOutlined, UserOutlined
+  ScheduleOutlined, LogoutOutlined, UserOutlined, FireOutlined
 } from '@ant-design/icons'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth'
@@ -28,6 +28,7 @@ export default function AppLayout() {
   if (['THERAPIST', 'ADMIN', 'NURSE', 'DOCTOR'].includes(user.role)) {
     menus.push({ key: '/patients', icon: <TeamOutlined />, label: '患者管理' })
     menus.push({ key: '/alerts', icon: <AlertOutlined />, label: user.role === 'DOCTOR' ? '介入处理' : '预警随访' })
+    menus.push({ key: '/escalations', icon: <FireOutlined />, label: '疼痛升级' })
     menus.push({ key: '/risk-board', icon: <FundOutlined />, label: '风险看板' })
   }
   if (user.role === 'FAMILY') {

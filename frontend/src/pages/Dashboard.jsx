@@ -20,10 +20,11 @@ export default function Dashboard() {
   return (
     <div>
       <Row gutter={16}>
-        <Col span={6}><Card className="stat-card"><Statistic title="我的患者" value={data.patientCount} suffix="人" /></Card></Col>
-        <Col span={6}><Card className="stat-card"><Statistic title="未处理预警" value={data.openAlertCount} suffix="条" valueStyle={{ color: data.openAlertCount > 0 ? '#cf1322' : undefined }} /></Card></Col>
-        <Col span={6}><Card className="stat-card"><Statistic title="7 天内待复诊" value={data.upcomingReviews.length} suffix="人" /></Card></Col>
-        <Col span={6}><Card className="stat-card"><Statistic title="刚出院 / 稳定 / 预警" value={`${data.stageCounts.NEWLY_DISCHARGED || 0} / ${data.stageCounts.STABLE_TRAINING || 0} / ${data.stageCounts.RECURRENCE_WARNING || 0}`} /></Card></Col>
+        <Col flex="1"><Card className="stat-card"><Statistic title="我的患者" value={data.patientCount} suffix="人" /></Card></Col>
+        <Col flex="1"><Card className="stat-card"><Statistic title="未处理预警" value={data.openAlertCount} suffix="条" valueStyle={{ color: data.openAlertCount > 0 ? '#cf1322' : undefined }} /></Card></Col>
+        <Col flex="1"><Card className="stat-card"><Statistic title="疼痛升级处置中" value={data.openEscalationCount ?? 0} suffix="起" valueStyle={{ color: data.openEscalationCount > 0 ? '#fa541c' : undefined }} /></Card></Col>
+        <Col flex="1"><Card className="stat-card"><Statistic title="7 天内待复诊" value={data.upcomingReviews.length} suffix="人" /></Card></Col>
+        <Col flex="1"><Card className="stat-card"><Statistic title="刚出院 / 稳定 / 预警" value={`${data.stageCounts.NEWLY_DISCHARGED || 0} / ${data.stageCounts.STABLE_TRAINING || 0} / ${data.stageCounts.RECURRENCE_WARNING || 0}`} /></Card></Col>
       </Row>
 
       <Card title="近 7 天复诊计划" size="small" style={{ marginTop: 16 }}>

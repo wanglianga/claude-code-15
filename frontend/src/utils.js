@@ -18,7 +18,34 @@ export const ALERT_TYPE = {
   COMPENSATION: '动作代偿明显',
   NO_COMPANION: '家属无法陪练',
   VIDEO_CORRECTION: '连续纠错未掌握',
-  DOCTOR_REFERRAL: '转诊医生处理'
+  DOCTOR_REFERRAL: '转诊医生处理',
+  PAIN_ESCALATION: '疼痛升级'
+}
+
+export const ESCALATION_TRIGGER = {
+  PAIN_OVER_THRESHOLD: '疼痛超阈值',
+  SWELLING_NUMBNESS: '肿胀/麻木',
+  NIGHT_PAIN_WORSE: '夜间痛加重'
+}
+
+export const ESCALATION_STATUS = {
+  PENDING_FAMILY_INFO: { label: '待家属补充', color: 'orange' },
+  NURSE_ASSESSING: { label: '护士评估中', color: 'processing' },
+  DOCTOR_REVIEW: { label: '待医生复核', color: 'purple' },
+  DISPOSITION_ACTIVE: { label: '医生已处置·暂停中', color: 'volcano' },
+  CLEARED: { label: '风险已解除', color: 'success' }
+}
+
+export const DISPOSITION = {
+  REST: '休息',
+  ICE: '冰敷',
+  IMAGING: '影像检查',
+  OUTPATIENT: '门诊复诊'
+}
+
+export const NURSE_DECISION = {
+  OBSERVE_RESUME: '继续观察，恢复训练',
+  ESCALATE_DOCTOR: '转医生复核'
 }
 
 export const CORRECTION_STATUS = {
@@ -75,7 +102,12 @@ export const EVENT_COLOR = {
   CORRECTION_CREATED: 'volcano',
   CORRECTION_CONFIRMED: 'cyan',
   CORRECTION_RECHECK: 'purple',
-  CORRECTION_REVIEWED: 'magenta'
+  CORRECTION_REVIEWED: 'magenta',
+  PAIN_ESCALATION_CREATED: 'red',
+  ESCALATION_FAMILY_REPORT: 'orange',
+  ESCALATION_NURSE_ASSESSMENT: 'gold',
+  ESCALATION_DOCTOR_DISPOSITION: 'magenta',
+  ESCALATION_CLEARED: 'green'
 }
 
 export const EVENT_LABEL = {
@@ -98,7 +130,12 @@ export const EVENT_LABEL = {
   CORRECTION_CREATED: '视频打回纠错',
   CORRECTION_CONFIRMED: '确认观看纠错',
   CORRECTION_RECHECK: '复评视频已提交',
-  CORRECTION_REVIEWED: '纠错复评结论'
+  CORRECTION_REVIEWED: '纠错复评结论',
+  PAIN_ESCALATION_CREATED: '疼痛升级·暂停动作',
+  ESCALATION_FAMILY_REPORT: '家属补充症状',
+  ESCALATION_NURSE_ASSESSMENT: '护士电话评估',
+  ESCALATION_DOCTOR_DISPOSITION: '医生处置结论',
+  ESCALATION_CLEARED: '风险解除·恢复训练'
 }
 
 export function parseJson(str, fallback = []) {

@@ -6,7 +6,8 @@ public enum AlertType {
     COMPENSATION("动作代偿明显"),
     NO_COMPANION("家属无法陪练"),
     VIDEO_CORRECTION("连续纠错未掌握"),
-    DOCTOR_REFERRAL("转诊医生处理");
+    DOCTOR_REFERRAL("转诊医生处理"),
+    PAIN_ESCALATION("疼痛升级");
 
     private final String label;
 

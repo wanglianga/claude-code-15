@@ -53,6 +53,10 @@ public class InsuranceSettlement {
     @Column(columnDefinition = "TEXT")
     private String detailJson;
 
+    /** 周期内训练中断标注（疼痛升级等原因，不计费，仅留痕） */
+    @Column(columnDefinition = "TEXT")
+    private String interruptionNote;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private SettlementStatus status = SettlementStatus.DRAFT;

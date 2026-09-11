@@ -13,7 +13,7 @@ import TimelineView from '../components/TimelineView'
 import MediaView from '../components/MediaView'
 import FileUpload from '../components/FileUpload'
 import { KeyPointTags, CorrectionStatusTag, VideoList } from '../components/Correction'
-import { DISEASE_TYPE, STAGE, RISK, DECISION, age, parseJson, fileUrl } from '../utils'
+import { DISEASE_TYPE, STAGE, RISK, DECISION, ESCALATION_STATUS, ESCALATION_TRIGGER, DISPOSITION, age, parseJson, fileUrl } from '../utils'
 
 const INSURANCE_TYPES = ['职工医保', '城乡居民医保', '新农合', '自费']
 
@@ -62,6 +62,7 @@ export default function PatientDetail() {
             { key: 'prescriptions', label: '处方管理', children: <PrescriptionTab patientId={id} canEdit={canEdit} /> },
             { key: 'logs', label: '训练反馈', children: <LogsTab patientId={id} canEdit={canEdit} /> },
             { key: 'corrections', label: '视频纠错', children: <CorrectionTab patientId={id} canEdit={canEdit} /> },
+            { key: 'escalations', label: '疼痛升级', children: <EscalationTab patientId={id} /> },
             { key: 'timeline', label: '患者时间线', children: <TimelineTab patientId={id} /> },
             { key: 'insurance', label: '医保结算', children: <InsuranceTab patientId={id} canEdit={canEdit} insuranceType={patient.insuranceType} /> }
           ]}
@@ -466,6 +467,8 @@ function LogsTab({ patientId, canEdit }) {
                   <Tag color={log.completionRate >= 80 ? 'green' : log.completionRate >= 50 ? 'orange' : 'red'}>完成率 {log.completionRate}%</Tag>
                   <Tag>疼痛 {log.painBefore ?? '-'} → {log.painAfter ?? '-'}</Tag>
                   {log.compensationObserved && <Tag color="volcano">动作代偿</Tag>}
+                  {log.swellingNumbness && <Tag color="red">肿胀/麻木</Tag>}
+                  {log.nightPainWorse && <Tag color="purple">夜间痛加重</Tag>}
                   {log.companionAvailable === false && <Tag color="orange">无法陪练</Tag>}
                 </Space>
               }
@@ -632,6 +635,55 @@ function CorrectionTab({ patientId, canEdit }) {
   )
 }
 
+/* ---------------- 疼痛升级处置 ---------------- */
+function EscalationTab({ patientId }) {
+  const [list, setList] = useState([])
+  useEffect(() => {
+    api.get(`/patients/${patientId}/escalations`).then((res) => setList(res.data))
+  }, [patientId])
+
+  if (list.length === 0) return <Empty description="无疼痛升级处置记录" />
+  return (
+    <List
+      dataSource={list}
+      renderItem={(esc) => (
+        <List.Item>
+          <List.Item.Meta
+            title={
+              <Space wrap>
+                <Tag color={ESCALATION_STATUS[esc.status]?.color}>{ESCALATION_STATUS[esc.status]?.label}</Tag>
+                <b>暂停「{esc.suspendedItemNames}」</b>
+                {(esc.triggers || '').split(',').filter(Boolean).map((t) => (
+                  <Tag key={t} color="red">{ESCALATION_TRIGGER[t] || t}</Tag>
+                ))}
+                {esc.painScore != null && <Tag color="volcano">疼痛 {esc.painScore} 分</Tag>}
+                <span style={{ color: '#888', fontSize: 12 }}>{esc.createdAt?.slice(0, 16)}</span>
+              </Space>
+            }
+            description={
+              <div style={{ fontSize: 13 }}>
+                {esc.familyReportedAt && (
+                  <div>家属补充：{esc.familySymptoms} ｜ 用药：{esc.familyMedication} ｜ {esc.familyFell ? <b style={{ color: '#cf1322' }}>有摔倒（{esc.familyFellDetail}）</b> : '无摔倒'}</div>
+                )}
+                {esc.nurseAssessment && <div>护士评估（{esc.nurse?.name}）：{esc.nurseAssessment}</div>}
+                {esc.doctorConclusion && (
+                  <div>
+                    医生处置（{esc.doctor?.name}）：
+                    {(esc.doctorDispositions || '').split(',').filter(Boolean).map((d) => <Tag key={d} color="purple">{DISPOSITION[d] || d}</Tag>)}
+                    {esc.doctorConclusion}
+                    {esc.reviewDate && <span>（复诊/检查：{esc.reviewDate}）</span>}
+                  </div>
+                )}
+                {esc.clearedAt && <div style={{ color: '#52c41a' }}>✓ {esc.clearedAt?.slice(0, 16)} 风险解除（{esc.clearedBy}）{esc.clearNote ? `：${esc.clearNote}` : ''}</div>}
+              </div>
+            }
+          />
+        </List.Item>
+      )}
+    />
+  )
+}
+
 /* ---------------- 时间线 ---------------- */
 function TimelineTab({ patientId }) {
   const [events, setEvents] = useState([])
@@ -787,6 +839,11 @@ function InsuranceTab({ patientId, canEdit, insuranceType }) {
               <Descriptions.Item label="合计">¥{detail.totalAmount}</Descriptions.Item>
               <Descriptions.Item label="医保报销"><span className="money">¥{detail.reimbursableAmount}</span></Descriptions.Item>
               <Descriptions.Item label="个人自付">¥{detail.selfPayAmount}</Descriptions.Item>
+              {detail.interruptionNote && (
+                <Descriptions.Item label="训练中断标注" span={2}>
+                  <span style={{ color: '#cf1322' }}>{detail.interruptionNote}</span>
+                </Descriptions.Item>
+              )}
             </Descriptions>
             <Table
               rowKey={(r) => r.name} size="small" pagination={false}

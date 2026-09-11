@@ -47,6 +47,12 @@ public class TrainingLog {
     /** 训练后疼痛 VAS */
     private Integer painAfter;
 
+    /** 是否出现肿胀/麻木 */
+    private Boolean swellingNumbness = false;
+
+    /** 夜间疼痛是否加重 */
+    private Boolean nightPainWorse = false;
+
     /** 异常照片路径 JSON 数组 */
     @Column(columnDefinition = "TEXT")
     private String abnormalPhotos;

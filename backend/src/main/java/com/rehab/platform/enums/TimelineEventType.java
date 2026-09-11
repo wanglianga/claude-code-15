@@ -20,7 +20,12 @@ public enum TimelineEventType {
     CORRECTION_CREATED("视频打回纠错"),
     CORRECTION_CONFIRMED("确认观看纠错"),
     CORRECTION_RECHECK("复评视频已提交"),
-    CORRECTION_REVIEWED("纠错复评结论");
+    CORRECTION_REVIEWED("纠错复评结论"),
+    PAIN_ESCALATION_CREATED("疼痛升级·暂停动作"),
+    ESCALATION_FAMILY_REPORT("家属补充症状"),
+    ESCALATION_NURSE_ASSESSMENT("护士电话评估"),
+    ESCALATION_DOCTOR_DISPOSITION("医生处置结论"),
+    ESCALATION_CLEARED("风险解除·恢复训练");
 
     private final String label;
 

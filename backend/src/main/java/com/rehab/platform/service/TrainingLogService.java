@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -32,18 +33,42 @@ public class TrainingLogService {
     private final StatsService statsService;
     private final CorrectionTaskService correctionTaskService;
     private final CorrectionTaskRepository correctionTaskRepository;
+    private final PainEscalationService painEscalationService;
     private final ObjectMapper objectMapper;
 
-    /** 今日任务 = 当前执行中处方 + 待确认/进行中的纠错任务 */
+    /** 今日任务 = 当前执行中处方（剔除疼痛升级暂停的动作） + 待确认/进行中的纠错任务 */
     public Map<String, Object> todayTasks(Long patientId) {
         Patient patient = patientService.getAccessible(patientId);
         Prescription active = prescriptionRepository
                 .findByPatientIdAndStatus(patientId, PrescriptionStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(404, "当前没有执行中的处方，请联系治疗师"));
         TrainingLog todayLog = trainingLogRepository.findByPatientIdAndLogDate(patientId, LocalDate.now()).orElse(null);
+
+        // 疼痛升级：解除风险前，相关动作不出现在每日训练任务中
+        Set<Long> suspendedIds = painEscalationService.suspendedItemIds(patientId);
+        List<PrescriptionItem> visibleItems = active.getItems().stream()
+                .filter(i -> !suspendedIds.contains(i.getId()))
+                .toList();
+        List<PrescriptionItem> suspendedItems = active.getItems().stream()
+                .filter(i -> suspendedIds.contains(i.getId()))
+                .toList();
+        Map<String, Object> rx = new HashMap<>();
+        rx.put("id", active.getId());
+        rx.put("phase", active.getPhase());
+        rx.put("status", active.getStatus());
+        rx.put("startDate", active.getStartDate());
+        rx.put("endDate", active.getEndDate());
+        rx.put("nextReviewDate", active.getNextReviewDate());
+        rx.put("painThreshold", active.getPainThreshold());
+        rx.put("notes", active.getNotes());
+        rx.put("adjustReason", active.getAdjustReason());
+        rx.put("items", visibleItems);
+
         Map<String, Object> result = new HashMap<>();
         result.put("patient", patient);
-        result.put("prescription", active);
+        result.put("prescription", rx);
+        result.put("suspendedItems", suspendedItems);
+        result.put("openEscalations", painEscalationService.openEscalations(patientId));
         result.put("todayLog", todayLog == null ? "" : todayLog);
         result.put("logSubmitted", todayLog != null);
         result.put("pendingCorrections", correctionTaskService.pendingConfirmations(patientId));
@@ -86,6 +111,8 @@ public class TrainingLogService {
         log.setFamilyNote(req.familyNote());
         log.setCompanionAvailable(req.companionAvailable() == null || req.companionAvailable());
         log.setCompensationObserved(Boolean.TRUE.equals(req.compensationObserved()));
+        log.setSwellingNumbness(Boolean.TRUE.equals(req.swellingNumbness()));
+        log.setNightPainWorse(Boolean.TRUE.equals(req.nightPainWorse()));
         log.setCompletedDetail(toJson(req.items()));
         log.setAbnormalPhotos(toJson(req.abnormalPhotos()));
         log.setVideoClips(toJson(req.videoClips()));
@@ -99,20 +126,23 @@ public class TrainingLogService {
         // 新视频自动关联到等待复评的纠错任务（与旧问题对比）
         correctionTaskService.onNewTrainingLog(patient, saved);
 
-        runRules(patient, active, saved);
+        // 疼痛升级处置：疼痛超阈值 / 肿胀麻木 / 夜间痛加重 → 暂停相关动作，走家属补充→护士评估→医生复核流
+        var escalation = painEscalationService.checkAndCreate(patient, active, saved, req);
+
+        runRules(patient, active, saved, escalation != null);
         return saved;
     }
 
     /**
      * 预警规则引擎：
-     * 1. 疼痛升高：训练后疼痛 ≥ 处方疼痛阈值，或较训练前升高 ≥2 分
+     * 1. 疼痛升高：训练后疼痛 ≥ 处方疼痛阈值，或较训练前升高 ≥2 分（已触发疼痛升级处置时不重复预警）
      * 2. 动作代偿明显
      * 3. 家属无法陪练
      * 4. 连续漏练 ≥2 天
      */
-    private void runRules(Patient patient, Prescription prescription, TrainingLog log) {
+    private void runRules(Patient patient, Prescription prescription, TrainingLog log, boolean painEscalated) {
         Integer threshold = prescription.getPainThreshold() == null ? 6 : prescription.getPainThreshold();
-        if (log.getPainAfter() != null) {
+        if (!painEscalated && log.getPainAfter() != null) {
             if (log.getPainAfter() >= threshold) {
                 alertService.createIfAbsent(patient, AlertType.PAIN_RISE,
                         log.getPainAfter() >= 8 ? AlertLevel.HIGH : AlertLevel.MEDIUM,
