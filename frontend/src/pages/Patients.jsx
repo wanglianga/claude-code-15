@@ -4,7 +4,7 @@ import { PlusOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import api from '../api'
-import { DISEASE_TYPE, STAGE, age } from '../utils'
+import { DISEASE_TYPE, STAGE, age, asArray } from '../utils'
 import { useAuth } from '../auth'
 
 export default function Patients() {
@@ -22,7 +22,7 @@ export default function Patients() {
 
   const load = () => {
     setLoading(true)
-    api.get('/patients').then((res) => setPatients(res.data)).finally(() => setLoading(false))
+    api.get('/patients').then((res) => setPatients(asArray(res.data))).finally(() => setLoading(false))
   }
 
   useEffect(() => {

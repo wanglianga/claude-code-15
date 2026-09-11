@@ -7,7 +7,7 @@ import PainChart from '../components/PainChart'
 import MediaView from '../components/MediaView'
 import FileUpload from '../components/FileUpload'
 import { KeyPointTags, CorrectionStatusTag, VideoList } from '../components/Correction'
-import { DISEASE_TYPE, STAGE, ESCALATION_STATUS, ESCALATION_TRIGGER, DISPOSITION, parseJson } from '../utils'
+import { DISEASE_TYPE, STAGE, ESCALATION_STATUS, ESCALATION_TRIGGER, DISPOSITION, parseJson, asArray } from '../utils'
 
 /** 家属端：今日训练任务打卡 + 疼痛升级处置（暂停动作/补充症状/查看医生结论） + 历史记录 */
 export default function FamilyToday() {
@@ -35,8 +35,10 @@ export default function FamilyToday() {
 
   const load = async () => {
     const res = await api.get('/patients')
-    if (res.data.length === 0) return
-    const p = res.data[0]
+    // 兼容后端返回数组或单个患者对象两种结构
+    const patients = asArray(res.data)
+    if (patients.length === 0) return
+    const p = patients[0]
     setPatient(p)
     let t
     try {

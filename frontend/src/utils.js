@@ -143,6 +143,12 @@ export function parseJson(str, fallback = []) {
   try { return JSON.parse(str) } catch { return fallback }
 }
 
+/** 归一化列表接口返回：兼容数组与单对象两种结构（家属端 /patients 可能返回单个患者对象） */
+export function asArray(data) {
+  if (!data) return []
+  return Array.isArray(data) ? data : [data]
+}
+
 export function fileUrl(path) {
   return `/api/files/${path}`
 }
