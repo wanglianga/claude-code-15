@@ -1,0 +1,43 @@
+body { margin: 0; background: #f0f2f5; }
+#root { min-height: 100vh; }
+
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1677ff 0%, #36cfc9 100%);
+}
+.login-card { width: 420px; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+.login-title { text-align: center; margin-bottom: 4px; }
+.login-sub { text-align: center; color: #888; margin-bottom: 24px; }
+.demo-accounts { background: #f6f8fa; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #666; }
+.demo-accounts b { color: #333; }
+
+.app-logo {
+  color: #fff; font-size: 16px; font-weight: 600; padding: 16px;
+  line-height: 1.4; border-bottom: 1px solid rgba(255,255,255,.15);
+}
+.app-logo small { display: block; font-weight: 400; font-size: 12px; opacity: .75; }
+
+.page-content { padding: 20px; }
+.stat-card .ant-statistic-title { font-size: 13px; }
+
+.stage-col { background: #fafafa; border-radius: 8px; padding: 12px; min-height: 300px; }
+.stage-col-title { font-weight: 600; margin-bottom: 4px; }
+.stage-col-hint { font-size: 12px; color: #999; margin-bottom: 12px; }
+.patient-card { margin-bottom: 10px; cursor: pointer; }
+.patient-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+
+.media-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.media-grid video { max-width: 240px; border-radius: 6px; background: #000; }
+
+.timeline-content { color: #666; white-space: pre-wrap; }
+.task-item { border: 1px solid #f0f0f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; background: #fff; }
+.task-item.done { border-color: #b7eb8f; background: #f6ffed; }
+.task-meta { color: #888; font-size: 13px; margin-top: 4px; }
+.task-warn { color: #cf1322; font-size: 13px; margin-top: 4px; }
+.task-observe { color: #1677ff; font-size: 13px; margin-top: 4px; }
+
+.review-section { margin-bottom: 20px; }
+.money { font-weight: 600; color: #cf1322; }

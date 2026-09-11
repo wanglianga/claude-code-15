@@ -1,0 +1,44 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: rehab-platform
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/rehab_platform?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true}
+    username: ${DB_USER:rehab}
+    password: ${DB_PASSWORD:rehab123}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 200MB
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          max-age: 1h
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+app:
+  jwt-secret: ${JWT_SECRET:rehab-platform-jwt-secret-key-0123456789abcdef-please-change-in-production}
+  jwt-expire-hours: ${JWT_EXPIRE_HOURS:12}
+  upload-dir: ${UPLOAD_DIR:./uploads}

@@ -1,0 +1,56 @@
+# 县城康复中心 · 居家训练处方与复诊评估平台
+# 应用 + MySQL 一键部署。仅应用端口发布到宿主，数据库仅在内部网络访问。
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ${COMPOSE_PROJECT_NAME}-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rehab_platform}
+      MYSQL_USER: ${MYSQL_USER:-rehab}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rehab123}
+      TZ: Asia/Shanghai
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-time-zone=+08:00
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    networks:
+      - internal
+    # 注意：不发布任何端口到宿主，仅内部网络互访
+
+  app:
+    build: .
+    container_name: ${COMPOSE_PROJECT_NAME}-app
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-rehab_platform}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      DB_USER: ${MYSQL_USER:-rehab}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-rehab123}
+      JWT_SECRET: ${JWT_SECRET:-rehab-platform-jwt-secret-key-0123456789abcdef-please-change-in-production}
+      UPLOAD_DIR: /app/uploads
+      TZ: Asia/Shanghai
+    ports:
+      - "${CC_PUBLISH_PORT}:8080"
+    volumes:
+      - upload_data:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  upload_data:
+
+networks:
+  internal:
+    driver: bridge
