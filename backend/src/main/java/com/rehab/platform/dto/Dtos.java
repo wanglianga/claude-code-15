@@ -124,4 +124,21 @@ public final class Dtos {
     public record SettlementRequest(@NotNull(message = "开始日期不能为空") LocalDate periodStart,
                                     @NotNull(message = "结束日期不能为空") LocalDate periodEnd) {
     }
+
+    /** 关键动作点标注 */
+    public record KeyPointTag(@NotBlank(message = "关键动作点不能为空") String code,
+                              String note,
+                              String timestamp) {
+    }
+
+    /** 治疗师打回视频创建纠错任务 */
+    public record CorrectionTaskRequest(Long prescriptionItemId,
+                                        @NotNull(message = "请至少标注一个关键动作点") List<KeyPointTag> keyPoints,
+                                        @NotBlank(message = "请填写纠错说明") String correctionNote) {
+    }
+
+    /** 治疗师复评：是否真正掌握 */
+    public record CorrectionReviewRequest(@NotNull(message = "请给出复评结论") Boolean mastered,
+                                          String reviewNote) {
+    }
 }

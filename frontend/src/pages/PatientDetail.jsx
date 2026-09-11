@@ -12,6 +12,7 @@ import PainChart from '../components/PainChart'
 import TimelineView from '../components/TimelineView'
 import MediaView from '../components/MediaView'
 import FileUpload from '../components/FileUpload'
+import { KeyPointTags, CorrectionStatusTag, VideoList } from '../components/Correction'
 import { DISEASE_TYPE, STAGE, RISK, DECISION, age, parseJson, fileUrl } from '../utils'
 
 const INSURANCE_TYPES = ['职工医保', '城乡居民医保', '新农合', '自费']
@@ -60,6 +61,7 @@ export default function PatientDetail() {
             { key: 'assessments', label: '评估记录', children: <AssessmentTab patientId={id} canEdit={canEdit} /> },
             { key: 'prescriptions', label: '处方管理', children: <PrescriptionTab patientId={id} canEdit={canEdit} /> },
             { key: 'logs', label: '训练反馈', children: <LogsTab patientId={id} canEdit={canEdit} /> },
+            { key: 'corrections', label: '视频纠错', children: <CorrectionTab patientId={id} canEdit={canEdit} /> },
             { key: 'timeline', label: '患者时间线', children: <TimelineTab patientId={id} /> },
             { key: 'insurance', label: '医保结算', children: <InsuranceTab patientId={id} canEdit={canEdit} insuranceType={patient.insuranceType} /> }
           ]}
@@ -391,8 +393,11 @@ function LogsTab({ patientId, canEdit }) {
   const [logs, setLogs] = useState([])
   const [curve, setCurve] = useState([])
   const [adherence, setAdherence] = useState(null)
-  const [feedbackTarget, setFeedbackTarget] = useState(null)
-  const [feedbackText, setFeedbackText] = useState('')
+  const [rejectLog, setRejectLog] = useState(null)
+  const [keyPointDict, setKeyPointDict] = useState([])
+  const [rxItems, setRxItems] = useState([])
+  const [rejectForm] = Form.useForm()
+  const [selectedPoints, setSelectedPoints] = useState([])
 
   const load = () => {
     api.get(`/patients/${patientId}/training-logs`).then((res) => setLogs(res.data))
@@ -401,12 +406,33 @@ function LogsTab({ patientId, canEdit }) {
   }
   useEffect(() => { load() }, [patientId])
 
-  const submitFeedback = async () => {
-    if (!feedbackText.trim()) return message.warning('请输入纠错内容')
-    await api.post(`/training-logs/${feedbackTarget.id}/feedback`, { feedback: feedbackText })
-    message.success('纠错反馈已保存并写入时间线')
-    setFeedbackTarget(null)
-    setFeedbackText('')
+  const openReject = (log) => {
+    setRejectLog(log)
+    setSelectedPoints([])
+    rejectForm.resetFields()
+    if (keyPointDict.length === 0) {
+      api.get('/key-points').then((res) => setKeyPointDict(res.data))
+    }
+    api.get(`/patients/${patientId}/prescriptions/active`, { silent: true })
+      .then((res) => setRxItems(res.data.items || [])).catch(() => {})
+  }
+
+  const submitReject = async () => {
+    const values = await rejectForm.validateFields()
+    if (selectedPoints.length === 0) return message.warning('请至少标注一个关键动作点')
+    const keyPoints = selectedPoints.map((code) => ({
+      code,
+      label: keyPointDict.find((k) => k.code === code)?.label || code,
+      timestamp: values[`ts_${code}`] || '',
+      note: values[`note_${code}`] || ''
+    }))
+    await api.post(`/training-logs/${rejectLog.id}/correction-tasks`, {
+      prescriptionItemId: values.prescriptionItemId,
+      keyPoints,
+      correctionNote: values.correctionNote
+    })
+    message.success('已打回该视频，患者下次打卡前必须确认观看纠错内容')
+    setRejectLog(null)
     load()
   }
 
@@ -429,7 +455,9 @@ function LogsTab({ patientId, canEdit }) {
         pagination={{ pageSize: 8 }}
         renderItem={(log) => (
           <List.Item
-            actions={canEdit ? [<Button key="fb" size="small" icon={<ToolOutlined />} onClick={() => { setFeedbackTarget(log); setFeedbackText(log.therapistFeedback || '') }}>视频纠错</Button>] : undefined}
+            actions={canEdit && parseJson(log.videoClips).length > 0
+              ? [<Button key="rj" size="small" danger icon={<ToolOutlined />} onClick={() => openReject(log)}>打回纠错</Button>]
+              : undefined}
           >
             <List.Item.Meta
               title={
@@ -447,7 +475,7 @@ function LogsTab({ patientId, canEdit }) {
                   <MediaView photos={log.abnormalPhotos} videos={log.videoClips} />
                   {log.therapistFeedback && (
                     <div style={{ marginTop: 6, background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
-                      <b>治疗师纠错（{log.feedbackBy}）：</b>{log.therapistFeedback}
+                      <b>治疗师反馈（{log.feedbackBy}）：</b>{log.therapistFeedback}
                     </div>
                   )}
                 </div>
@@ -456,9 +484,149 @@ function LogsTab({ patientId, canEdit }) {
           </List.Item>
         )}
       />
-      <Modal title={`视频纠错（${feedbackTarget?.logDate} 打卡）`} open={!!feedbackTarget} onOk={submitFeedback} onCancel={() => setFeedbackTarget(null)} okText="保存反馈">
-        <Input.TextArea rows={4} value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)}
-          placeholder="指出动作问题与纠正方法，将同步给家属并写入时间线" />
+
+      {/* 打回视频：标注关键动作点 + 纠错说明 */}
+      <Modal
+        title={`打回视频纠错（${rejectLog?.logDate} 打卡）`}
+        open={!!rejectLog} onOk={submitReject} onCancel={() => setRejectLog(null)} width={640}
+        okText="打回并通知患者"
+      >
+        {rejectLog && (
+          <div>
+            <div style={{ marginBottom: 12 }}>
+              <VideoList videosJson={rejectLog.videoClips} maxWidth={320} />
+            </div>
+            <Form form={rejectForm} layout="vertical">
+              <Form.Item name="prescriptionItemId" label="关联训练项目" rules={[{ required: true, message: '请选择训练项目' }]}>
+                <Select options={rxItems.map((i) => ({ value: i.id, label: i.exerciseName }))} placeholder="选择被纠错的动作" />
+              </Form.Item>
+              <Form.Item label="标注关键动作点（平台将推送给患者确认）" required>
+                <Checkbox.Group
+                  style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}
+                  options={keyPointDict.map((k) => ({ value: k.code, label: k.label }))}
+                  value={selectedPoints}
+                  onChange={setSelectedPoints}
+                />
+              </Form.Item>
+              {selectedPoints.map((code) => (
+                <div key={code} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <Tag color="volcano" style={{ height: 32, lineHeight: '30px', minWidth: 110 }}>
+                    {keyPointDict.find((k) => k.code === code)?.label || code}
+                  </Tag>
+                  <Form.Item name={`ts_${code}`} noStyle>
+                    <Input placeholder="时间点 如 00:12" style={{ width: 130 }} />
+                  </Form.Item>
+                  <Form.Item name={`note_${code}`} noStyle>
+                    <Input placeholder="问题描述 如 屈曲角度过大" style={{ flex: 1 }} />
+                  </Form.Item>
+                </div>
+              ))}
+              <Form.Item name="correctionNote" label="纠错说明" rules={[{ required: true, message: '请填写纠错说明' }]}>
+                <Input.TextArea rows={3} placeholder="告诉患者/家属错在哪里、如何纠正、下次拍摄要求" />
+              </Form.Item>
+            </Form>
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+/* ---------------- 视频纠错任务 ---------------- */
+function CorrectionTab({ patientId, canEdit }) {
+  const [tasks, setTasks] = useState([])
+  const [reviewTarget, setReviewTarget] = useState(null)
+  const [reviewNote, setReviewNote] = useState('')
+
+  const load = () => api.get(`/patients/${patientId}/correction-tasks`).then((res) => setTasks(res.data))
+  useEffect(() => { load() }, [patientId])
+
+  const review = async (mastered) => {
+    await api.post(`/correction-tasks/${reviewTarget.id}/review`, { mastered, reviewNote })
+    message.success(mastered ? '已判定掌握，纠错闭环完成' : '已记录未掌握，患者需继续纠正')
+    setReviewTarget(null)
+    setReviewNote('')
+    load()
+  }
+
+  return (
+    <div>
+      <List
+        header={<b>视频纠错任务（{tasks.length}）：打回 → 患者确认 → 新视频对比 → 复评掌握</b>}
+        dataSource={tasks}
+        pagination={{ pageSize: 6 }}
+        renderItem={(task) => (
+          <List.Item
+            actions={canEdit && task.status === 'RECHECK'
+              ? [<Button key="rv" type="primary" size="small" onClick={() => { setReviewTarget(task); setReviewNote('') }}>对比复评</Button>]
+              : undefined}
+          >
+            <List.Item.Meta
+              title={
+                <Space wrap>
+                  <CorrectionStatusTag status={task.status} />
+                  <b>{task.prescriptionItem?.exerciseName || '训练动作'}</b>
+                  <span style={{ color: '#888', fontSize: 12 }}>来源 {task.sourceLog?.logDate} 打卡</span>
+                  {task.consecutiveErrors > 0 && <Tag color="red">连续 {task.consecutiveErrors} 次未掌握</Tag>}
+                </Space>
+              }
+              description={
+                <div>
+                  <KeyPointTags keyPoints={task.keyPoints} />
+                  <div style={{ fontSize: 13 }}>纠错说明:{task.correctionNote}</div>
+                  <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                    {task.confirmedBy && <span>✓ {task.confirmedBy} 已确认观看（{task.confirmedAt?.slice(0, 16)}）　</span>}
+                    {task.recheckLog && <span>复评视频：{task.recheckLog.logDate} 打卡　</span>}
+                    {task.reviewedBy && <span>复评人:{task.reviewedBy}</span>}
+                  </div>
+                  {task.reviewNote && (
+                    <div style={{ marginTop: 4, fontSize: 13, color: task.status === 'MASTERED' ? '#52c41a' : '#cf1322' }}>
+                      复评结论：{task.reviewNote}
+                    </div>
+                  )}
+                </div>
+              }
+            />
+          </List.Item>
+        )}
+      />
+
+      {/* 新旧视频对比复评 */}
+      <Modal
+        title={`对比复评：${reviewTarget?.prescriptionItem?.exerciseName || '训练动作'}`}
+        open={!!reviewTarget} footer={null} onCancel={() => setReviewTarget(null)} width={860}
+      >
+        {reviewTarget && (
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              <b>旧问题（关键动作点）：</b>
+              <KeyPointTags keyPoints={reviewTarget.keyPoints} />
+              <div style={{ fontSize: 13, color: '#666' }}>纠错说明：{reviewTarget.correctionNote}</div>
+            </div>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Card size="small" title={`旧视频（${reviewTarget.sourceLog?.logDate} 被纠错）`}>
+                  <VideoList videosJson={reviewTarget.sourceLog?.videoClips} maxWidth={340} />
+                </Card>
+              </Col>
+              <Col span={12}>
+                <Card size="small" title={`新视频（${reviewTarget.recheckLog?.logDate} 复评）`}>
+                  <VideoList videosJson={reviewTarget.recheckLog?.videoClips} maxWidth={340} />
+                </Card>
+              </Col>
+            </Row>
+            {reviewTarget.consecutiveErrors >= 1 && (
+              <Alert style={{ marginTop: 12 }} type="warning" showIcon
+                message={`已连续 ${reviewTarget.consecutiveErrors} 次未掌握，本次再未掌握将自动追加线下复评并预警`} />
+            )}
+            <Input.TextArea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}
+              placeholder="复评备注：新旧视频对比情况……" style={{ marginTop: 12 }} />
+            <Space style={{ marginTop: 12 }}>
+              <Button type="primary" onClick={() => review(true)}>已掌握 ✓（闭环）</Button>
+              <Button danger onClick={() => review(false)}>未掌握（继续纠正）</Button>
+            </Space>
+          </div>
+        )}
       </Modal>
     </div>
   )

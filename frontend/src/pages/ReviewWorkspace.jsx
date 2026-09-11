@@ -8,8 +8,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import api from '../api'
 import PainChart from '../components/PainChart'
-import MediaView from '../components/MediaView'
 import FileUpload from '../components/FileUpload'
+import { KeyPointTags, CorrectionStatusTag } from '../components/Correction'
 import { DECISION, DISEASE_TYPE, STAGE, parseJson } from '../utils'
 
 /**
@@ -39,7 +39,7 @@ export default function ReviewWorkspace() {
     api.get(`/patients/${id}`).then((res) => setPatient(res.data))
     api.get(`/patients/${id}/adherence?days=14`).then((res) => setAdherence(res.data))
     api.get(`/patients/${id}/pain-curve?days=30`).then((res) => setCurve(res.data))
-    api.get(`/patients/${id}/corrections`).then((res) => setCorrections(res.data))
+    api.get(`/patients/${id}/correction-tasks`).then((res) => setCorrections(res.data))
     api.get(`/patients/${id}/prescriptions/active`, { silent: true }).then((res) => setPrescription(res.data)).catch(() => {})
     api.get(`/patients/${id}/training-logs?days=30`).then((res) => setLogs(res.data))
   }
@@ -141,19 +141,30 @@ export default function ReviewWorkspace() {
 
         <Row gutter={16} className="review-section">
           <Col span={12}>
-            <Card size="small" title="视频纠错记录">
-              {corrections.length === 0 ? <Empty description="暂无纠错记录" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : (
+            <Card size="small" title="视频纠错任务（打回→确认→对比→复评）">
+              {corrections.length === 0 ? <Empty description="暂无纠错任务" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : (
                 <List
                   size="small"
                   dataSource={corrections}
-                  renderItem={(c) => (
+                  renderItem={(task) => (
                     <List.Item>
                       <List.Item.Meta
-                        title={<span><Tag>{c.logDate}</Tag>{c.feedbackBy}</span>}
+                        title={
+                          <span>
+                            <CorrectionStatusTag status={task.status} />
+                            {task.prescriptionItem?.exerciseName || '训练动作'}
+                            {task.consecutiveErrors > 0 && <Tag color="red" style={{ marginLeft: 4 }}>连续{task.consecutiveErrors}次未掌握</Tag>}
+                          </span>
+                        }
                         description={
                           <div>
-                            <div>{c.therapistFeedback}</div>
-                            <MediaView photos={c.abnormalPhotos} videos={c.videoClips} />
+                            <KeyPointTags keyPoints={task.keyPoints} />
+                            <div style={{ fontSize: 12 }}>{task.correctionNote}</div>
+                            {task.reviewNote && (
+                              <div style={{ fontSize: 12, color: task.status === 'MASTERED' ? '#52c41a' : '#cf1322' }}>
+                                复评：{task.reviewNote}
+                              </div>
+                            )}
                           </div>
                         }
                       />

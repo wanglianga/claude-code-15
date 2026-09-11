@@ -7,6 +7,7 @@ import com.rehab.platform.config.SecurityUtils;
 import com.rehab.platform.dto.Dtos;
 import com.rehab.platform.enums.*;
 import com.rehab.platform.model.*;
+import com.rehab.platform.repository.CorrectionTaskRepository;
 import com.rehab.platform.repository.PrescriptionRepository;
 import com.rehab.platform.repository.TrainingLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -28,20 +30,27 @@ public class TrainingLogService {
     private final TimelineService timelineService;
     private final AlertService alertService;
     private final StatsService statsService;
+    private final CorrectionTaskService correctionTaskService;
+    private final CorrectionTaskRepository correctionTaskRepository;
     private final ObjectMapper objectMapper;
 
-    /** 今日任务 = 当前执行中处方 */
+    /** 今日任务 = 当前执行中处方 + 待确认/进行中的纠错任务 */
     public Map<String, Object> todayTasks(Long patientId) {
         Patient patient = patientService.getAccessible(patientId);
         Prescription active = prescriptionRepository
                 .findByPatientIdAndStatus(patientId, PrescriptionStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(404, "当前没有执行中的处方，请联系治疗师"));
         TrainingLog todayLog = trainingLogRepository.findByPatientIdAndLogDate(patientId, LocalDate.now()).orElse(null);
-        return Map.of(
-                "patient", patient,
-                "prescription", active,
-                "todayLog", todayLog == null ? "" : todayLog,
-                "logSubmitted", todayLog != null);
+        Map<String, Object> result = new HashMap<>();
+        result.put("patient", patient);
+        result.put("prescription", active);
+        result.put("todayLog", todayLog == null ? "" : todayLog);
+        result.put("logSubmitted", todayLog != null);
+        result.put("pendingCorrections", correctionTaskService.pendingConfirmations(patientId));
+        result.put("activeCorrections", correctionTaskRepository
+                .findByPatientIdAndStatusIn(patientId,
+                        List.of(CorrectionStatus.CONFIRMED, CorrectionStatus.NOT_MASTERED, CorrectionStatus.RECHECK)));
+        return result;
     }
 
     /** 提交每日训练打卡（同日重复提交则覆盖更新），并运行预警规则引擎 */
@@ -49,6 +58,14 @@ public class TrainingLogService {
     public TrainingLog submit(Long patientId, Dtos.TrainingLogRequest req) {
         Patient patient = patientService.getAccessible(patientId);
         User submitter = SecurityUtils.currentUser();
+
+        // 闸门：存在未确认的视频纠错任务时禁止打卡
+        var pendingCorrections = correctionTaskService.pendingConfirmations(patientId);
+        if (!pendingCorrections.isEmpty()) {
+            throw new BusinessException("有 " + pendingCorrections.size()
+                    + " 条视频纠错尚未确认观看，请先在「今日训练」页面观看纠错内容并确认后再打卡");
+        }
+
         Prescription active = prescriptionRepository
                 .findByPatientIdAndStatus(patientId, PrescriptionStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException("当前没有执行中的处方，无法打卡"));
@@ -78,6 +95,9 @@ public class TrainingLogService {
                 (isNew ? "" : "更新") + "居家训练打卡（" + logDate + "）：完成率 " + req.completionRate()
                         + "%，疼痛 " + nullToDash(req.painBefore()) + " → " + nullToDash(req.painAfter()) + " 分",
                 req.familyNote(), "trainingLog", saved.getId());
+
+        // 新视频自动关联到等待复评的纠错任务（与旧问题对比）
+        correctionTaskService.onNewTrainingLog(patient, saved);
 
         runRules(patient, active, saved);
         return saved;

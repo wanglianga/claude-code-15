@@ -14,13 +14,24 @@ build/
 dist/
 coverage/
 .cache/
+cache/
+logs/
+log/
+temp/
+tmp/
 *.log
 *.tmp
 *.db
+*.sqlite
+*.sqlite3
 
 # Local QA/agent state
 .playwright-cli/
 *_traces/
+traces/
+*.jsonl
+QA*
+qa-*
 memory/
 memories/
 skill/

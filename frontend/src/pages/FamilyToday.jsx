@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { Card, Checkbox, Slider, Switch, Input, Button, Tag, message, Row, Col, Statistic, Alert, Empty, List } from 'antd'
-import { CheckCircleOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, WarningOutlined, EyeOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import api from '../api'
 import PainChart from '../components/PainChart'
 import MediaView from '../components/MediaView'
 import FileUpload from '../components/FileUpload'
+import { KeyPointTags, CorrectionStatusTag, VideoList } from '../components/Correction'
 import { DISEASE_TYPE, STAGE, parseJson } from '../utils'
 
 /** 家属端：今日训练任务打卡 + 历史记录 */
@@ -13,6 +14,8 @@ export default function FamilyToday() {
   const navigate = useNavigate()
   const [patient, setPatient] = useState(null)
   const [tasks, setTasks] = useState(null)
+  const [pendingCorrections, setPendingCorrections] = useState([])
+  const [activeCorrections, setActiveCorrections] = useState([])
   const [doneMap, setDoneMap] = useState({})
   const [painBefore, setPainBefore] = useState(2)
   const [painAfter, setPainAfter] = useState(3)
@@ -34,9 +37,11 @@ export default function FamilyToday() {
     try {
       t = await api.get(`/patients/${p.id}/today-tasks`, { silent: true })
     } catch {
-      t = { data: { prescription: { items: [] }, logSubmitted: false, todayLog: null } }
+      t = { data: { prescription: { items: [] }, logSubmitted: false, todayLog: null, pendingCorrections: [], activeCorrections: [] } }
     }
     setTasks(t.data)
+    setPendingCorrections(t.data.pendingCorrections || [])
+    setActiveCorrections(t.data.activeCorrections || [])
     if (t.data.todayLog) {
       const log = t.data.todayLog
       const map = {}
@@ -56,12 +61,19 @@ export default function FamilyToday() {
 
   useEffect(() => { load().catch(() => {}) }, [])
 
+  const confirmCorrection = async (taskId) => {
+    await api.post(`/correction-tasks/${taskId}/confirm`)
+    message.success('已确认观看纠错内容，可以继续打卡')
+    load()
+  }
+
   if (!patient) return <Empty description="暂未绑定患者档案，请联系康复中心" style={{ padding: 60 }} />
   if (!tasks) return null
 
   const items = tasks.prescription?.items || []
   const doneCount = items.filter((i) => doneMap[i.id]).length
   const completionRate = items.length === 0 ? 0 : Math.round((doneCount * 100) / items.length)
+  const blocked = pendingCorrections.length > 0
 
   const submit = async () => {
     setSubmitting(true)
@@ -87,6 +99,56 @@ export default function FamilyToday() {
   return (
     <Row gutter={16}>
       <Col span={14}>
+        {/* 待确认的视频纠错任务（打卡闸门） */}
+        {pendingCorrections.map((task) => (
+          <Alert
+            key={task.id}
+            type="warning"
+            style={{ marginBottom: 16 }}
+            message={
+              <span><WarningOutlined /> 治疗师打回了 {task.sourceLog?.logDate} 的训练视频，请先观看纠错内容并确认，确认后才能打卡</span>
+            }
+            description={
+              <Card size="small" style={{ marginTop: 8, background: '#fffbe6' }}>
+                <div style={{ marginBottom: 4 }}>
+                  <b>训练动作：{task.prescriptionItem?.exerciseName || '训练动作'}</b>
+                  <CorrectionStatusTag status={task.status} />
+                </div>
+                <div style={{ marginBottom: 4 }}>关键动作点：</div>
+                <KeyPointTags keyPoints={task.keyPoints} />
+                <div style={{ margin: '8px 0', padding: 8, background: '#fff', borderRadius: 6, border: '1px solid #ffe58f' }}>
+                  <b>纠错说明：</b>{task.correctionNote}
+                </div>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>被纠错的视频（{task.sourceLog?.logDate}）</div>
+                    <VideoList videosJson={task.sourceLog?.videoClips} maxWidth={260} />
+                  </Col>
+                </Row>
+                <Button type="primary" icon={<EyeOutlined />} onClick={() => confirmCorrection(task.id)}>
+                  我已观看并理解纠错内容
+                </Button>
+              </Card>
+            }
+          />
+        ))}
+
+        {/* 进行中的纠错提醒（已确认/待复评） */}
+        {activeCorrections.length > 0 && (
+          <Card size="small" title="动作纠正提醒（请在本轮训练中重点注意）" style={{ marginBottom: 16 }}>
+            {activeCorrections.map((task) => (
+              <div key={task.id} style={{ marginBottom: 10 }}>
+                <CorrectionStatusTag status={task.status} />
+                <b>{task.prescriptionItem?.exerciseName || '训练动作'}</b>
+                {task.consecutiveErrors > 0 && <Tag color="red">已连续 {task.consecutiveErrors} 次未掌握</Tag>}
+                <KeyPointTags keyPoints={task.keyPoints} />
+                <div style={{ fontSize: 13, color: '#666' }}>{task.correctionNote}</div>
+              </div>
+            ))}
+            <div style={{ fontSize: 12, color: '#1677ff' }}>提示：今天打卡请上传训练视频，系统会与之前被纠错的视频对比，供治疗师判断动作是否真正掌握。</div>
+          </Card>
+        )}
+
         <Card
           title={
             <span>
@@ -148,7 +210,12 @@ export default function FamilyToday() {
                   <FileUpload value={videos} onChange={setVideos} accept="video/*" label="上传视频" />
                 </Col>
               </Row>
-              <Button type="primary" size="large" block loading={submitting} onClick={submit} style={{ marginTop: 16 }}>
+              {blocked && (
+                <Alert style={{ marginTop: 16 }} type="error" showIcon
+                  message={`还有 ${pendingCorrections.length} 条视频纠错未确认，请先在页面上方观看并确认`} />
+              )}
+              <Button type="primary" size="large" block loading={submitting} onClick={submit}
+                disabled={blocked} style={{ marginTop: 16 }}>
                 {tasks.logSubmitted ? '更新今日打卡' : '提交今日打卡'}
               </Button>
             </Card>

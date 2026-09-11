@@ -16,7 +16,11 @@ public enum TimelineEventType {
     OUTPATIENT_TREATMENT("线下治疗记录"),
     SETTLEMENT_CREATED("医保结算"),
     STAGE_CHANGED("疾病阶段调整"),
-    REVIEW_PLANNED("复诊计划");
+    REVIEW_PLANNED("复诊计划"),
+    CORRECTION_CREATED("视频打回纠错"),
+    CORRECTION_CONFIRMED("确认观看纠错"),
+    CORRECTION_RECHECK("复评视频已提交"),
+    CORRECTION_REVIEWED("纠错复评结论");
 
     private final String label;
 

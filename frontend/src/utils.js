@@ -17,7 +17,16 @@ export const ALERT_TYPE = {
   PAIN_RISE: '疼痛升高',
   COMPENSATION: '动作代偿明显',
   NO_COMPANION: '家属无法陪练',
+  VIDEO_CORRECTION: '连续纠错未掌握',
   DOCTOR_REFERRAL: '转诊医生处理'
+}
+
+export const CORRECTION_STATUS = {
+  PENDING_CONFIRM: { label: '待患者确认', color: 'orange' },
+  CONFIRMED: { label: '已确认，待下次视频', color: 'blue' },
+  RECHECK: { label: '新视频待复评', color: 'purple' },
+  MASTERED: { label: '已掌握', color: 'green' },
+  NOT_MASTERED: { label: '未掌握，继续纠正', color: 'red' }
 }
 
 export const ALERT_STATUS = {
@@ -62,7 +71,11 @@ export const EVENT_COLOR = {
   OUTPATIENT_TREATMENT: 'blue',
   SETTLEMENT_CREATED: 'green',
   STAGE_CHANGED: 'orange',
-  REVIEW_PLANNED: 'geekblue'
+  REVIEW_PLANNED: 'geekblue',
+  CORRECTION_CREATED: 'volcano',
+  CORRECTION_CONFIRMED: 'cyan',
+  CORRECTION_RECHECK: 'purple',
+  CORRECTION_REVIEWED: 'magenta'
 }
 
 export const EVENT_LABEL = {
@@ -81,7 +94,11 @@ export const EVENT_LABEL = {
   OUTPATIENT_TREATMENT: '线下治疗记录',
   SETTLEMENT_CREATED: '医保结算',
   STAGE_CHANGED: '疾病阶段调整',
-  REVIEW_PLANNED: '复诊计划'
+  REVIEW_PLANNED: '复诊计划',
+  CORRECTION_CREATED: '视频打回纠错',
+  CORRECTION_CONFIRMED: '确认观看纠错',
+  CORRECTION_RECHECK: '复评视频已提交',
+  CORRECTION_REVIEWED: '纠错复评结论'
 }
 
 export function parseJson(str, fallback = []) {

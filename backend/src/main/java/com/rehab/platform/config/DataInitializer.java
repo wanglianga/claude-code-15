@@ -39,6 +39,7 @@ public class DataInitializer implements CommandLineRunner {
     private final OutpatientTreatmentRepository treatmentRepository;
     private final InsuranceSettlementRepository settlementRepository;
     private final TimelineEventRepository timelineRepository;
+    private final CorrectionTaskRepository correctionTaskRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.upload-dir}")
@@ -153,6 +154,7 @@ public class DataInitializer implements CommandLineRunner {
                 ), today.minusDays(18).atTime(10, 0));
 
         // 打卡：-17 ~ -1 天，第 -8 天疼痛升高
+        TrainingLog logD5 = null, logD3 = null, logD1 = null;
         for (int d = 17; d >= 1; d--) {
             LocalDate date = today.minusDays(d);
             int painBefore = 2 + (d % 3);
@@ -167,6 +169,15 @@ public class DataInitializer implements CommandLineRunner {
                     d == 8 ? "[\"seed-redness.svg\"]" : null,
                     d == 8 ? "今天练完桥式运动后右肩很疼，皮肤有点红" : (d % 5 == 0 ? "完成得不错，精神可以" : null),
                     true, compensation);
+            if (d == 5) {
+                logD5 = log;
+            }
+            if (d == 3) {
+                logD3 = log;
+            }
+            if (d == 1) {
+                logD1 = log;
+            }
             if (d == 8) {
                 // 疼痛升高 → 预警 → 护士随访 → 治疗师降低强度
                 Alert alert = alert(p, AlertType.PAIN_RISE, AlertLevel.MEDIUM, AlertStatus.RESOLVED,
@@ -207,24 +218,65 @@ public class DataInitializer implements CommandLineRunner {
                                 "步态对称性、足下垂", true, "340200023", "25")
                 ), today.minusDays(7).atTime(9, 45));
 
-        // 近 7 天打卡挂到第二阶段处方 + 一条视频纠错记录
+        // 近 7 天打卡挂到第二阶段处方
         trainingLogRepository.findByPatientIdOrderByLogDateDesc(p.getId()).stream()
                 .filter(l -> !l.getLogDate().isBefore(today.minusDays(7)))
                 .forEach(l -> {
                     l.setPrescription(rx2);
                     trainingLogRepository.save(l);
                 });
-        TrainingLog correctionLog = trainingLogRepository
-                .findByPatientIdAndLogDate(p.getId(), today.minusDays(3)).orElse(null);
-        if (correctionLog != null) {
-            correctionLog.setTherapistFeedback("视频纠错：步行训练中患侧支撑期过短、躯干向健侧倾斜明显。请家属提醒患者先站稳再迈步，患腿承重时间数 3 秒；下次打卡请拍摄侧面步态视频。");
-            correctionLog.setFeedbackBy(therapist.getName());
-            correctionLog.setFeedbackAt(today.minusDays(3).atTime(21, 30));
-            trainingLogRepository.save(correctionLog);
-            tl(p, TimelineEventType.VIDEO_CORRECTED, therapist, "视频纠错（" + today.minusDays(3) + " 打卡）",
-                    correctionLog.getTherapistFeedback(), "trainingLog", correctionLog.getId(),
-                    today.minusDays(3).atTime(21, 30));
-        }
+
+        // ---- 纠错任务 A（已完成全流程：打回→确认→复评→已掌握） ----
+        PrescriptionItem walkItem = rx2.getItems().get(3); // 扶助行器步行训练
+        CorrectionTask taskA = new CorrectionTask();
+        taskA.setPatient(p);
+        taskA.setSourceLog(logD5);
+        taskA.setPrescriptionItem(walkItem);
+        taskA.setKeyPoints("[{\"code\":\"GAIT_DRAGGING\",\"label\":\"步态拖曳\",\"note\":\"患侧迈步拖曳明显\",\"timestamp\":\"00:08\"},"
+                + "{\"code\":\"TRUNK_LEAN\",\"label\":\"躯干倾斜\",\"note\":\"躯干向健侧倾斜\",\"timestamp\":\"00:15\"}]");
+        taskA.setCorrectionNote("步行训练中患侧支撑期过短、步态拖曳，躯干向健侧倾斜。请先站稳再迈步，患腿承重默数 3 秒；下次打卡请拍摄侧面步态视频。");
+        taskA.setStatus(CorrectionStatus.MASTERED);
+        taskA.setConsecutiveErrors(0);
+        taskA.setConfirmedBy(family.getName());
+        taskA.setConfirmedAt(today.minusDays(4).atTime(8, 30));
+        taskA.setRecheckLog(logD3);
+        taskA.setReviewNote("侧面视频对比：拖曳明显改善，患侧支撑期延长，判定已掌握。");
+        taskA.setReviewedBy(therapist.getName());
+        taskA.setReviewedAt(today.minusDays(3).atTime(21, 30));
+        taskA.setCreatedAt(today.minusDays(5).atTime(21, 0));
+        correctionTaskRepository.save(taskA);
+        tl(p, TimelineEventType.CORRECTION_CREATED, therapist,
+                "视频打回纠错：扶助行器步行训练（" + today.minusDays(5) + " 打卡）",
+                "关键动作点：步态拖曳（00:08）：患侧迈步拖曳明显；躯干倾斜（00:15）：躯干向健侧倾斜。纠错说明："
+                        + taskA.getCorrectionNote() + "。患者下次训练前必须确认观看。",
+                "correctionTask", taskA.getId(), today.minusDays(5).atTime(21, 0));
+        tl(p, TimelineEventType.CORRECTION_CONFIRMED, family, "已确认观看纠错内容：扶助行器步行训练",
+                "关键动作点已知晓，下次训练将拍摄视频供对比复评。", "correctionTask", taskA.getId(),
+                today.minusDays(4).atTime(8, 30));
+        tl(p, TimelineEventType.CORRECTION_RECHECK, null, "复评视频已提交：扶助行器步行训练",
+                "患者上传了新的训练视频，系统已与 " + today.minusDays(5) + " 被纠错的旧视频关联，等待治疗师对比复评。",
+                "correctionTask", taskA.getId(), today.minusDays(3).atTime(20, 5));
+        tl(p, TimelineEventType.CORRECTION_REVIEWED, therapist, "纠错复评：已掌握 ✓ 扶助行器步行训练",
+                "对比新旧视频后判定患者已真正掌握动作。 复评备注：" + taskA.getReviewNote(),
+                "correctionTask", taskA.getId(), today.minusDays(3).atTime(21, 30));
+
+        // ---- 纠错任务 B（待患者确认：家属下次打卡前必须先观看确认） ----
+        PrescriptionItem bridgeItem = rx2.getItems().get(0); // 桥式运动
+        CorrectionTask taskB = new CorrectionTask();
+        taskB.setPatient(p);
+        taskB.setSourceLog(logD1);
+        taskB.setPrescriptionItem(bridgeItem);
+        taskB.setKeyPoints("[{\"code\":\"KNEE_ANGLE\",\"label\":\"膝关节角度\",\"note\":\"抬臀时膝屈曲约 110°，角度过大\",\"timestamp\":\"00:05\"},"
+                + "{\"code\":\"SCAPULAR_COMPENSATION\",\"label\":\"肩胛代偿\",\"note\":\"肩胛上提代偿明显\",\"timestamp\":\"00:11\"}]");
+        taskB.setCorrectionNote("桥式运动抬臀时膝关节屈曲角度过大、肩胛上提代偿。请收紧核心、双膝保持约 90°，肩部放松贴床，下次训练请拍摄侧面视频复评。");
+        taskB.setStatus(CorrectionStatus.PENDING_CONFIRM);
+        taskB.setCreatedAt(today.minusDays(1).atTime(21, 0));
+        correctionTaskRepository.save(taskB);
+        tl(p, TimelineEventType.CORRECTION_CREATED, therapist,
+                "视频打回纠错：桥式运动（" + today.minusDays(1) + " 打卡）",
+                "关键动作点：膝关节角度（00:05）：抬臀时膝屈曲约 110°，角度过大；肩胛代偿（00:11）：肩胛上提代偿明显。纠错说明："
+                        + taskB.getCorrectionNote() + "。患者下次训练前必须确认观看。",
+                "correctionTask", taskB.getId(), today.minusDays(1).atTime(21, 0));
 
         // 线下治疗记录
         OutpatientTreatment t1 = treatment(p, therapist, today.minusDays(10), "运动疗法（门诊）", "340200020", true, "40",
@@ -471,6 +523,7 @@ public class DataInitializer implements CommandLineRunner {
         // -20 ~ -4 天打卡：完成率下降、疼痛上升、出现代偿与无法陪练
         int[] completion = {90, 88, 85, 80, 82, 75, 70, 72, 65, 60, 55, 50, 45, 40, 35, 30, 25};
         int idx = 0;
+        TrainingLog logD5 = null, logD4 = null;
         for (int d = 20; d >= 4; d--) {
             LocalDate date = today.minusDays(d);
             int painBefore = d > 10 ? 3 : 4;
@@ -481,6 +534,12 @@ public class DataInitializer implements CommandLineRunner {
                     painBefore, painAfter, null,
                     d == 6 ? "这两天练完肩膀疼得厉害" : (d == 4 ? "我这两天要出差，没法陪我妈练" : null),
                     companion, compensation);
+            if (d == 5) {
+                logD5 = log;
+            }
+            if (d == 4) {
+                logD4 = log;
+            }
             if (d == 6) {
                 Alert alert = alert(p, AlertType.PAIN_RISE, AlertLevel.MEDIUM, AlertStatus.FOLLOWING,
                         "训练后疼痛 6 分，达到/超过处方疼痛阈值 6 分", log.getId(),
@@ -517,6 +576,39 @@ public class DataInitializer implements CommandLineRunner {
                 today.atTime(7, 0), null, null, null);
         tl(p, TimelineEventType.ALERT_CREATED, null, "触发预警：连续漏练（高风险）",
                 missed.getMessage() + "。已推送康复护士电话随访队列。", "alert", missed.getId(), today.atTime(7, 0));
+
+        // ---- 纠错任务 C（连续未掌握 1 次：再一次未掌握将触发自动线下复评） ----
+        PrescriptionItem stepItem = rx.getItems().get(1); // 原地踏步训练
+        CorrectionTask taskC = new CorrectionTask();
+        taskC.setPatient(p);
+        taskC.setSourceLog(logD5);
+        taskC.setPrescriptionItem(stepItem);
+        taskC.setKeyPoints("[{\"code\":\"GAIT_DRAGGING\",\"label\":\"步态拖曳\",\"note\":\"原地踏步左足拖曳\",\"timestamp\":\"00:06\"}]");
+        taskC.setCorrectionNote("踏步训练左足拖曳明显，请先抬高膝部再落足，家属在旁保护防跌倒。");
+        taskC.setStatus(CorrectionStatus.NOT_MASTERED);
+        taskC.setConsecutiveErrors(1);
+        taskC.setConfirmedBy(family5.getName());
+        taskC.setConfirmedAt(today.minusDays(5).atTime(21, 30));
+        taskC.setRecheckLog(logD4);
+        taskC.setReviewNote("复评视频左足仍拖曳，纠正不到位，继续练习。");
+        taskC.setReviewedBy(therapist.getName());
+        taskC.setReviewedAt(today.minusDays(4).atTime(21, 0));
+        taskC.setCreatedAt(today.minusDays(5).atTime(21, 0));
+        correctionTaskRepository.save(taskC);
+        tl(p, TimelineEventType.CORRECTION_CREATED, therapist,
+                "视频打回纠错：原地踏步训练（" + today.minusDays(5) + " 打卡）",
+                "关键动作点：步态拖曳（00:06）：原地踏步左足拖曳。纠错说明：" + taskC.getCorrectionNote()
+                        + "。患者下次训练前必须确认观看。",
+                "correctionTask", taskC.getId(), today.minusDays(5).atTime(21, 0));
+        tl(p, TimelineEventType.CORRECTION_CONFIRMED, family5, "已确认观看纠错内容：原地踏步训练",
+                "关键动作点已知晓，下次训练将拍摄视频供对比复评。", "correctionTask", taskC.getId(),
+                today.minusDays(5).atTime(21, 30));
+        tl(p, TimelineEventType.CORRECTION_RECHECK, null, "复评视频已提交：原地踏步训练",
+                "患者上传了新的训练视频，系统已与 " + today.minusDays(5) + " 被纠错的旧视频关联，等待治疗师对比复评。",
+                "correctionTask", taskC.getId(), today.minusDays(4).atTime(20, 5));
+        tl(p, TimelineEventType.CORRECTION_REVIEWED, therapist, "纠错复评：未掌握（连续第 1 次）原地踏步训练",
+                "旧问题仍未纠正，需继续练习。 复评备注：" + taskC.getReviewNote(),
+                "correctionTask", taskC.getId(), today.minusDays(4).atTime(21, 0));
 
         // 一周前医生介入记录（已解决）
         Alert referral = alert(p, AlertType.DOCTOR_REFERRAL, AlertLevel.MEDIUM, AlertStatus.RESOLVED,
