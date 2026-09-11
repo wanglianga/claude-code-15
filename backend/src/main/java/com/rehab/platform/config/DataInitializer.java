@@ -41,12 +41,13 @@ public class DataInitializer implements CommandLineRunner {
     private final TimelineEventRepository timelineRepository;
     private final CorrectionTaskRepository correctionTaskRepository;
     private final PainEscalationRepository painEscalationRepository;
+    private final CaregiverHandoverRepository handoverRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.upload-dir}")
     private String uploadDir;
 
-    private User admin, therapist, therapist2, nurse, doctor, family, family2, family3, family4, family5;
+    private User admin, therapist, therapist2, nurse, doctor, family, family2, family3, family4, family5, family6, family7;
 
     @Override
     public void run(String... args) throws Exception {
@@ -79,6 +80,8 @@ public class DataInitializer implements CommandLineRunner {
         family3 = user("family3", "王强", Role.FAMILY, "患者本人（自我管理）", "13905710003");
         family4 = user("family4", "刘敏", Role.FAMILY, "患者陈晨家属（母亲）", "13905710004");
         family5 = user("family5", "吴强", Role.FAMILY, "患者周淑英家属（儿子）", "13905710005");
+        family6 = user("family6", "王秀兰", Role.FAMILY, "患者陈晨家属（祖母，新照护人）", "13905710006");
+        family7 = user("family7", "张强", Role.FAMILY, "患者张建国家属（儿子，新照护人）", "13800000011");
     }
 
     private User user(String username, String name, Role role, String title, String phone) {
@@ -355,6 +358,31 @@ public class DataInitializer implements CommandLineRunner {
                 "生成医保结算单（" + s.getPeriodStart() + " ~ " + s.getPeriodEnd() + "）",
                 "居家训练 ¥498.00 + 复诊评估 ¥30.00 + 线下治疗 ¥65.00 = 合计 ¥593.00；按「城乡居民医保」报销比例 70%，报销 ¥415.10，自付 ¥177.90；已标注 1 次疼痛升级中断",
                 "settlement", s.getId(), today.minusDays(1).atTime(10, 0));
+
+        // 照护人更换（待新照护人确认）：女儿张丽 → 儿子张强，张丽历史打卡记录保留
+        CaregiverHandover h1 = new CaregiverHandover();
+        h1.setPatient(p);
+        h1.setOldCaregiverName("张丽");
+        h1.setOldCaregiverRelation("女儿");
+        h1.setOldFamilyUserId(family.getId());
+        h1.setOldFamilyUserName(family.getName());
+        h1.setNewCaregiverName("张强");
+        h1.setNewCaregiverRelation("儿子");
+        h1.setNewCaregiverPhone("13800000011");
+        h1.setNewFamilyUser(family7);
+        h1.setReason("张丽工作外派半年，弟弟张强接手日常陪练");
+        h1.setStatus(HandoverStatus.PENDING_CONFIRM);
+        h1.setCreatedBy(therapist.getName());
+        h1.setCreatedAt(today.minusDays(1).atTime(16, 0));
+        handoverRepository.save(h1);
+        p.setCaregiverName("张强");
+        p.setCaregiverRelation("儿子");
+        p.setCaregiverPhone("13800000011");
+        p.setFamilyUser(family7);
+        patientRepository.save(p);
+        tl(p, TimelineEventType.CAREGIVER_HANDOVER_CREATED, therapist, "照护人更换：张丽 → 张强",
+                "更换原因：张丽工作外派半年，弟弟张强接手日常陪练。新照护人须完成动作注意事项、禁忌风险、器具使用三项确认后才能打卡；旧照护人历史反馈记录保留可查。",
+                "handover", h1.getId(), today.minusDays(1).atTime(16, 0));
         return p;
     }
 
@@ -569,10 +597,70 @@ public class DataInitializer implements CommandLineRunner {
                                 "步态稳定性、跌倒次数", false, null, "0")
                 ), today.minusDays(14).atTime(10, 0));
 
-        for (int d = 12; d >= 1; d--) {
+        // -12 ~ -8 天：母亲刘敏陪练打卡（旧照护人记录保留）
+        for (int d = 12; d >= 8; d--) {
             trainingLog(p, rx, today.minusDays(d), 85, 0, 0, null,
                     d % 4 == 0 ? "今天配合度不错，爬了 10 米" : null, true, false);
         }
+
+        // 照护人交接（已完成）：母亲刘敏 → 祖母王秀兰，-7 天前完成三项确认
+        CaregiverHandover h4 = new CaregiverHandover();
+        h4.setPatient(p);
+        h4.setOldCaregiverName("刘敏");
+        h4.setOldCaregiverRelation("母亲");
+        h4.setOldFamilyUserId(family4.getId());
+        h4.setOldFamilyUserName(family4.getName());
+        h4.setNewCaregiverName("王秀兰");
+        h4.setNewCaregiverRelation("祖母");
+        h4.setNewCaregiverPhone("13905710006");
+        h4.setNewFamilyUser(family6);
+        h4.setReason("母亲工作调动外地半年，祖母接手日常陪练");
+        h4.setStatus(HandoverStatus.CONFIRMED);
+        h4.setPrecautionsConfirmed(true);
+        h4.setContraindicationsConfirmed(true);
+        h4.setDevicesConfirmed(true);
+        h4.setConfirmedBy(family6.getName());
+        h4.setConfirmedAt(today.minusDays(7).atTime(19, 0));
+        h4.setFirstWeekEnd(today.minusDays(7).plusDays(7));
+        h4.setCreatedBy(therapist2.getName());
+        h4.setCreatedAt(today.minusDays(7).atTime(18, 0));
+        handoverRepository.save(h4);
+        p.setCaregiverName("王秀兰");
+        p.setCaregiverRelation("祖母");
+        p.setCaregiverPhone("13905710006");
+        p.setFamilyUser(family6);
+        patientRepository.save(p);
+        tl(p, TimelineEventType.CAREGIVER_HANDOVER_CREATED, therapist2, "照护人更换：刘敏 → 王秀兰",
+                "更换原因：母亲工作调动外地半年，祖母接手日常陪练。新照护人须完成动作注意事项、禁忌风险、器具使用三项确认后才能打卡；旧照护人历史反馈记录保留可查。",
+                "handover", h4.getId(), today.minusDays(7).atTime(18, 0));
+        tl(p, TimelineEventType.CAREGIVER_HANDOVER_CONFIRMED, family6, "新照护人确认完成：王秀兰",
+                "已逐项确认动作注意事项、禁忌风险、器具使用。交接完成，首周（至 " + h4.getFirstWeekEnd()
+                        + "）新照护人反馈将重点标记，护士关注是否需要额外电话指导。",
+                "handover", h4.getId(), today.minusDays(7).atTime(19, 0));
+
+        // -6 ~ -1 天：祖母陪练打卡（完成率明显下滑 → 首周重点标记，供判断陪练理解偏差）
+        int[] comp6 = {65, 60, 58, 62, 55, 60};
+        String[] notes6 = {
+                "奶奶陪练，动作视频看不太懂，爬行只做了 6 米",
+                "平衡木没敢让娃自己走，全程扶着走了 4 米",
+                "今天只做了俯卧抬头，奶奶说弯不下腰",
+                "看了护士电话讲的要点，好像明白一点了",
+                "爬行动作还是不太标准，膝盖总拖着地",
+                "稍微顺手些了，今天爬了 8 米"
+        };
+        int idx6 = 0;
+        for (int d = 6; d >= 1; d--) {
+            trainingLog(p, rx, today.minusDays(d), comp6[idx6], 0, 0, null, notes6[idx6], true, false);
+            idx6++;
+        }
+
+        // 护士首周电话指导（-5 天）
+        h4.setNurseGuidanceNote("电话指导祖母：平衡木行走需全程牵手保护、低平衡木两侧放软垫；示范视频可反复播放，俯卧抬头用玩具诱导。已约定三天后复看打卡视频。");
+        h4.setNurseGuidanceBy(nurse.getName());
+        h4.setNurseGuidanceAt(today.minusDays(5).atTime(10, 0));
+        handoverRepository.save(h4);
+        tl(p, TimelineEventType.CAREGIVER_GUIDANCE, nurse, "护士电话指导新照护人（王秀兰）",
+                h4.getNurseGuidanceNote(), "handover", h4.getId(), today.minusDays(5).atTime(10, 0));
     }
 
     // ---------------- 患者5：周淑英（脑卒中·复发预警，多条待处理预警） ----------------

@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import { Table, Tag, Button, Space, Modal, Form, Input, Select, message, Drawer, Timeline, Descriptions } from 'antd'
+import { Table, Tag, Button, Space, Modal, Form, Input, Select, message, Drawer, Timeline, Descriptions, Card } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import api from '../api'
 import { useAuth } from '../auth'
 import { ALERT_TYPE, ALERT_STATUS, ALERT_LEVEL, DISEASE_TYPE, STAGE } from '../utils'
 
-/** 预警随访中心：护士接单随访 / 医生处理 / 治疗师查看 */
+/** 预警随访中心：护士接单随访 / 医生处理 / 治疗师查看 + 新照护人首周观察 */
 export default function Alerts() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -15,12 +15,16 @@ export default function Alerts() {
   const [opinionTarget, setOpinionTarget] = useState(null)
   const [drawerAlert, setDrawerAlert] = useState(null)
   const [followups, setFollowups] = useState([])
+  const [firstWeek, setFirstWeek] = useState([])
+  const [guidanceTarget, setGuidanceTarget] = useState(null)
   const [form] = Form.useForm()
   const [opinionForm] = Form.useForm()
+  const [guidanceForm] = Form.useForm()
 
   const load = () => {
     const qs = statusFilter ? `?status=${statusFilter}` : ''
     api.get(`/alerts${qs}`).then((res) => setList(res.data))
+    api.get('/handovers/first-week').then((res) => setFirstWeek(res.data)).catch(() => {})
   }
   useEffect(() => { load() }, [statusFilter])
 
@@ -65,12 +69,63 @@ export default function Alerts() {
     load()
   }
 
+  const submitGuidance = async () => {
+    const values = await guidanceForm.validateFields()
+    await api.post(`/handovers/${guidanceTarget.id}/nurse-guidance`, values)
+    message.success('电话指导已记录并写入患者时间线')
+    setGuidanceTarget(null)
+    guidanceForm.resetFields()
+    load()
+  }
+
   const isNurse = ['NURSE', 'ADMIN'].includes(user.role)
   const isDoctor = ['DOCTOR', 'ADMIN'].includes(user.role)
   const isStaff = isNurse || isDoctor || user.role === 'THERAPIST'
 
   return (
     <div>
+      {/* 新照护人首周观察：判断是否需要额外电话指导 */}
+      {firstWeek.length > 0 && (
+        <Card size="small" title="新照护人首周观察（反馈已重点标记）" style={{ marginBottom: 16 }}>
+          <Table
+            rowKey={(r) => r.handover.id}
+            size="small"
+            dataSource={firstWeek}
+            pagination={false}
+            columns={[
+              {
+                title: '患者', width: 140,
+                render: (_, r) => <a onClick={() => navigate(`/patients/${r.handover.patient.id}`)}>{r.handover.patient.name}</a>
+              },
+              {
+                title: '新照护人', width: 150,
+                render: (_, r) => <span>{r.handover.newCaregiverName}（{r.handover.newCaregiverRelation || '-'}）</span>
+              },
+              { title: '首周观察期', width: 190, render: (_, r) => `${r.handover.confirmedAt?.slice(0, 10)} ~ ${r.handover.firstWeekEnd}` },
+              {
+                title: '首周反馈', width: 260,
+                render: (_, r) => (
+                  <span>
+                    打卡 <b>{r.firstWeekStats.loggedDays}</b>/7 天 ｜ 平均完成率 <b>{r.firstWeekStats.avgCompletion}%</b> ｜ 平均疼痛 <b>{r.firstWeekStats.avgPainAfter}</b> 分
+                  </span>
+                )
+              },
+              {
+                title: '电话指导', width: 200,
+                render: (_, r) => r.handover.nurseGuidanceNote
+                  ? <Tag color="green">已指导（{r.handover.nurseGuidanceBy}）</Tag>
+                  : <Tag color="orange">待评估</Tag>
+              },
+              {
+                title: '操作', width: 110,
+                render: (_, r) => isNurse && (
+                  <Button size="small" type="primary" ghost onClick={() => setGuidanceTarget(r.handover)}>电话指导</Button>
+                )
+              }
+            ]}
+          />
+        </Card>
+      )}
       <Space style={{ marginBottom: 16 }}>
         <Select
           placeholder="按状态筛选" allowClear style={{ width: 160 }} onChange={setStatusFilter}
@@ -147,6 +202,16 @@ export default function Alerts() {
         <Form form={opinionForm} layout="vertical">
           <Form.Item name="opinion" label="处理意见" rules={[{ required: true, message: '请填写处理意见' }]}>
             <Input.TextArea rows={4} placeholder="诊断意见、处理建议、是否调整训练/用药、复诊安排" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 护士电话指导新照护人 */}
+      <Modal title={`电话指导新照护人（${guidanceTarget?.newCaregiverName} · ${guidanceTarget?.patient?.name}）`}
+        open={!!guidanceTarget} onOk={submitGuidance} onCancel={() => setGuidanceTarget(null)} okText="保存指导记录">
+        <Form form={guidanceForm} layout="vertical">
+          <Form.Item name="note" label="电话指导内容" rules={[{ required: true, message: '请填写指导内容' }]}>
+            <Input.TextArea rows={4} placeholder="动作要点讲解、器具使用纠正、观察重点、下次复看安排" />
           </Form.Item>
         </Form>
       </Modal>

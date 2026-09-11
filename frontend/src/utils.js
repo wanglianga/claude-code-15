@@ -48,6 +48,11 @@ export const NURSE_DECISION = {
   ESCALATE_DOCTOR: '转医生复核'
 }
 
+export const HANDOVER_STATUS = {
+  PENDING_CONFIRM: { label: '待新照护人确认', color: 'orange' },
+  CONFIRMED: { label: '交接完成', color: 'success' }
+}
+
 export const CORRECTION_STATUS = {
   PENDING_CONFIRM: { label: '待患者确认', color: 'orange' },
   CONFIRMED: { label: '已确认，待下次视频', color: 'blue' },
@@ -107,7 +112,10 @@ export const EVENT_COLOR = {
   ESCALATION_FAMILY_REPORT: 'orange',
   ESCALATION_NURSE_ASSESSMENT: 'gold',
   ESCALATION_DOCTOR_DISPOSITION: 'magenta',
-  ESCALATION_CLEARED: 'green'
+  ESCALATION_CLEARED: 'green',
+  CAREGIVER_HANDOVER_CREATED: 'volcano',
+  CAREGIVER_HANDOVER_CONFIRMED: 'cyan',
+  CAREGIVER_GUIDANCE: 'gold'
 }
 
 export const EVENT_LABEL = {
@@ -135,7 +143,10 @@ export const EVENT_LABEL = {
   ESCALATION_FAMILY_REPORT: '家属补充症状',
   ESCALATION_NURSE_ASSESSMENT: '护士电话评估',
   ESCALATION_DOCTOR_DISPOSITION: '医生处置结论',
-  ESCALATION_CLEARED: '风险解除·恢复训练'
+  ESCALATION_CLEARED: '风险解除·恢复训练',
+  CAREGIVER_HANDOVER_CREATED: '照护人更换',
+  CAREGIVER_HANDOVER_CONFIRMED: '新照护人确认',
+  CAREGIVER_GUIDANCE: '护士电话指导'
 }
 
 export function parseJson(str, fallback = []) {

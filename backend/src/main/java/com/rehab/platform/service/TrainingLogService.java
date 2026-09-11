@@ -34,6 +34,7 @@ public class TrainingLogService {
     private final CorrectionTaskService correctionTaskService;
     private final CorrectionTaskRepository correctionTaskRepository;
     private final PainEscalationService painEscalationService;
+    private final CaregiverHandoverService handoverService;
     private final ObjectMapper objectMapper;
 
     /** 今日任务 = 当前执行中处方（剔除疼痛升级暂停的动作） + 待确认/进行中的纠错任务 */
@@ -69,6 +70,9 @@ public class TrainingLogService {
         result.put("prescription", rx);
         result.put("suspendedItems", suspendedItems);
         result.put("openEscalations", painEscalationService.openEscalations(patientId));
+        // 照护人交接：待新照护人确认（打卡闸门）/ 首周观察期内的交接（首周标记）
+        result.put("pendingHandover", handoverService.pendingForPatient(patientId));
+        result.put("firstWeekHandover", handoverService.activeFirstWeek(patientId));
         result.put("todayLog", todayLog == null ? "" : todayLog);
         result.put("logSubmitted", todayLog != null);
         result.put("pendingCorrections", correctionTaskService.pendingConfirmations(patientId));
@@ -83,6 +87,13 @@ public class TrainingLogService {
     public TrainingLog submit(Long patientId, Dtos.TrainingLogRequest req) {
         Patient patient = patientService.getAccessible(patientId);
         User submitter = SecurityUtils.currentUser();
+
+        // 闸门：照护人更换后，新照护人未完成三项确认前禁止打卡
+        var pendingHandover = handoverService.pendingForPatient(patientId);
+        if (pendingHandover != null) {
+            throw new BusinessException("照护人已更换为「" + pendingHandover.getNewCaregiverName()
+                    + "」，请先完成动作注意事项、禁忌风险、器具使用三项确认后再打卡");
+        }
 
         // 闸门：存在未确认的视频纠错任务时禁止打卡
         var pendingCorrections = correctionTaskService.pendingConfirmations(patientId);

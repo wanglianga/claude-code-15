@@ -25,7 +25,10 @@ public enum TimelineEventType {
     ESCALATION_FAMILY_REPORT("家属补充症状"),
     ESCALATION_NURSE_ASSESSMENT("护士电话评估"),
     ESCALATION_DOCTOR_DISPOSITION("医生处置结论"),
-    ESCALATION_CLEARED("风险解除·恢复训练");
+    ESCALATION_CLEARED("风险解除·恢复训练"),
+    CAREGIVER_HANDOVER_CREATED("照护人更换"),
+    CAREGIVER_HANDOVER_CONFIRMED("新照护人确认"),
+    CAREGIVER_GUIDANCE("护士电话指导");
 
     private final String label;
 

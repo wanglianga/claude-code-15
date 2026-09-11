@@ -18,6 +18,8 @@ export default function FamilyToday() {
   const [activeCorrections, setActiveCorrections] = useState([])
   const [suspendedItems, setSuspendedItems] = useState([])
   const [escalations, setEscalations] = useState([])
+  const [pendingHandover, setPendingHandover] = useState(null)
+  const [firstWeekHandover, setFirstWeekHandover] = useState(null)
   const [doneMap, setDoneMap] = useState({})
   const [painBefore, setPainBefore] = useState(2)
   const [painAfter, setPainAfter] = useState(3)
@@ -51,6 +53,8 @@ export default function FamilyToday() {
     setActiveCorrections(t.data.activeCorrections || [])
     setSuspendedItems(t.data.suspendedItems || [])
     setEscalations(t.data.openEscalations || [])
+    setPendingHandover(t.data.pendingHandover || null)
+    setFirstWeekHandover(t.data.firstWeekHandover || null)
     if (t.data.todayLog) {
       const log = t.data.todayLog
       const map = {}
@@ -84,11 +88,19 @@ export default function FamilyToday() {
   const items = tasks.prescription?.items || []
   const doneCount = items.filter((i) => doneMap[i.id]).length
   const completionRate = items.length === 0 ? 0 : Math.round((doneCount * 100) / items.length)
-  const blocked = pendingCorrections.length > 0
+  const blocked = pendingCorrections.length > 0 || !!pendingHandover
   const threshold = tasks.prescription?.painThreshold ?? 6
   const escalationRisk = painAfter >= threshold || swelling || nightPain
   const doneItemIds = items.filter((i) => doneMap[i.id]).map((i) => i.id)
   const selectedPainItems = painItemIds ?? doneItemIds
+
+  // 新照护人首周反馈标记
+  const isFirstWeekLog = (log) => {
+    if (!firstWeekHandover?.confirmedAt) return false
+    const start = firstWeekHandover.confirmedAt.slice(0, 10)
+    return log.logDate >= start && log.logDate <= firstWeekHandover.firstWeekEnd
+      && log.submittedBy?.id === firstWeekHandover.newFamilyUser?.id
+  }
 
   const submit = async () => {
     setSubmitting(true)
@@ -122,6 +134,22 @@ export default function FamilyToday() {
   return (
     <Row gutter={16}>
       <Col span={14}>
+        {/* 照护人交接：新照护人三项确认闸门（确认前禁止打卡） */}
+        {pendingHandover && (
+          <HandoverConfirmCard handover={pendingHandover} items={items} onDone={load} />
+        )}
+
+        {/* 新照护人首周观察期提示 */}
+        {!pendingHandover && firstWeekHandover && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={`您正处于新照护人首周观察期（至 ${firstWeekHandover.firstWeekEnd}）`}
+            description="本周您的打卡反馈会被重点标记，康复护士会重点关注，如有需要会电话指导您动作要点。"
+          />
+        )}
+
         {/* 疼痛升级：待家属补充症状（平台要求） */}
         {escalations.filter((e) => e.status === 'PENDING_FAMILY_INFO').map((esc) => (
           <FamilyReportCard key={esc.id} esc={esc} onDone={load} />
@@ -316,7 +344,9 @@ export default function FamilyToday() {
               </Row>
               {blocked && (
                 <Alert style={{ marginTop: 16 }} type="error" showIcon
-                  message={`还有 ${pendingCorrections.length} 条视频纠错未确认，请先在页面上方观看并确认`} />
+                  message={pendingHandover
+                    ? `新照护人尚未完成交接确认，请先在页面上方完成三项确认`
+                    : `还有 ${pendingCorrections.length} 条视频纠错未确认，请先在页面上方观看并确认`} />
               )}
               <Button type="primary" size="large" block loading={submitting} onClick={submit}
                 disabled={blocked} danger={escalationRisk} style={{ marginTop: 16 }}>
@@ -343,6 +373,8 @@ export default function FamilyToday() {
                       {log.logDate}
                       <Tag color={log.completionRate >= 80 ? 'green' : 'orange'} style={{ marginLeft: 8 }}>{log.completionRate}%</Tag>
                       <Tag>疼痛 {log.painBefore ?? '-'}→{log.painAfter ?? '-'}</Tag>
+                      {log.submittedBy && <Tag>{log.submittedBy.name}</Tag>}
+                      {isFirstWeekLog(log) && <Tag color="geekblue">新照护人首周</Tag>}
                       {log.swellingNumbness && <Tag color="volcano">肿胀麻木</Tag>}
                       {log.nightPainWorse && <Tag color="purple">夜间痛</Tag>}
                     </span>
@@ -364,8 +396,7 @@ export default function FamilyToday() {
 }
 
 /** 疼痛升级：家属补充症状/用药/是否摔倒 */
-function FamilyReportCard({ esc, onDone }) {
-  const [symptoms, setSymptoms] = useState('')
+function FamilyReportCard({ esc, onDone }) {  const [symptoms, setSymptoms] = useState('')
   const [medication, setMedication] = useState('')
   const [fell, setFell] = useState(null)
   const [fellDetail, setFellDetail] = useState('')
@@ -424,6 +455,93 @@ function FamilyReportCard({ esc, onDone }) {
             )}
           </div>
           <Button type="primary" danger loading={saving} onClick={submit}>提交症状信息（转护士电话评估）</Button>
+        </Card>
+      }
+    />
+  )
+}
+
+/** 照护人交接：新照护人三项确认（动作注意事项 / 禁忌风险 / 器具使用），确认前禁止打卡 */
+function HandoverConfirmCard({ handover, items, onDone }) {
+  const [checks, setChecks] = useState({ precautions: false, contraindications: false, devices: false })
+  const [saving, setSaving] = useState(false)
+  const allChecked = checks.precautions && checks.contraindications && checks.devices
+  const toggle = (k) => setChecks({ ...checks, [k]: !checks[k] })
+
+  const confirm = async () => {
+    if (!allChecked) return message.warning('请逐项完成三项确认')
+    setSaving(true)
+    try {
+      await api.post(`/handovers/${handover.id}/confirm`, {
+        precautions: checks.precautions,
+        contraindications: checks.contraindications,
+        devices: checks.devices
+      })
+      message.success('交接确认完成，现在可以正常打卡了')
+      onDone()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const sectionStyle = { background: '#fff', border: '1px solid #ffe7ba', borderRadius: 6, padding: '8px 12px', marginBottom: 10 }
+
+  return (
+    <Alert
+      type="warning"
+      style={{ marginBottom: 16 }}
+      message={
+        <span><WarningOutlined /> 照护人已更换：{handover.oldCaregiverName} → <b>{handover.newCaregiverName}</b>
+          {handover.newCaregiverRelation && <Tag color="orange" style={{ marginLeft: 6 }}>{handover.newCaregiverRelation}</Tag>}
+        </span>
+      }
+      description={
+        <Card size="small" style={{ marginTop: 8, background: '#fffbe6' }}>
+          {handover.reason && <div style={{ marginBottom: 10 }}><b>更换原因：</b>{handover.reason}</div>}
+          <div style={{ marginBottom: 6, color: '#ad6800' }}>
+            作为新照护人，请在开始陪练前逐项阅读并确认以下内容（全部确认后才能打卡）：
+          </div>
+
+          <div style={sectionStyle}>
+            <Checkbox checked={checks.precautions} onChange={() => toggle('precautions')}>
+              <b>① 动作注意事项（剂量与家属观察点）</b>
+            </Checkbox>
+            {items.map((i) => (
+              <div key={i.id} style={{ fontSize: 13, marginTop: 4, paddingLeft: 24 }}>
+                · <b>{i.exerciseName}</b>：{i.targetSets} 组 × {i.targetReps} 次，每日 {i.frequencyPerDay} 次
+                {i.painThreshold != null && <span>；疼痛超过 {i.painThreshold} 分立即停止</span>}
+                {i.familyObservation && <div style={{ color: '#666' }}>　观察点：{i.familyObservation}</div>}
+              </div>
+            ))}
+          </div>
+
+          <div style={sectionStyle}>
+            <Checkbox checked={checks.contraindications} onChange={() => toggle('contraindications')}>
+              <b>② 禁忌风险（以下情况禁止训练）</b>
+            </Checkbox>
+            {items.filter((i) => i.contraindication).map((i) => (
+              <div key={i.id} style={{ fontSize: 13, marginTop: 4, paddingLeft: 24, color: '#cf1322' }}>
+                · {i.exerciseName}：{i.contraindication}
+              </div>
+            ))}
+            {items.every((i) => !i.contraindication) && <div style={{ fontSize: 13, paddingLeft: 24, color: '#888' }}>本阶段处方无特殊禁忌</div>}
+          </div>
+
+          <div style={sectionStyle}>
+            <Checkbox checked={checks.devices} onChange={() => toggle('devices')}>
+              <b>③ 辅助器具使用</b>
+            </Checkbox>
+            {items.filter((i) => i.assistiveDevice && i.assistiveDevice !== '无').map((i) => (
+              <div key={i.id} style={{ fontSize: 13, marginTop: 4, paddingLeft: 24 }}>
+                · {i.exerciseName}：<Tag color="blue">{i.assistiveDevice}</Tag>
+              </div>
+            ))}
+            {items.every((i) => !i.assistiveDevice || i.assistiveDevice === '无') && <div style={{ fontSize: 13, paddingLeft: 24, color: '#888' }}>本阶段无需辅助器具</div>}
+          </div>
+
+          <Button type="primary" loading={saving} disabled={!allChecked} onClick={confirm}>
+            我已完成三项确认，开始陪练
+          </Button>
         </Card>
       }
     />

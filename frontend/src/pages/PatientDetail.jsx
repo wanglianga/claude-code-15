@@ -13,7 +13,7 @@ import TimelineView from '../components/TimelineView'
 import MediaView from '../components/MediaView'
 import FileUpload from '../components/FileUpload'
 import { KeyPointTags, CorrectionStatusTag, VideoList } from '../components/Correction'
-import { DISEASE_TYPE, STAGE, RISK, DECISION, ESCALATION_STATUS, ESCALATION_TRIGGER, DISPOSITION, age, parseJson, fileUrl } from '../utils'
+import { DISEASE_TYPE, STAGE, RISK, DECISION, ESCALATION_STATUS, ESCALATION_TRIGGER, DISPOSITION, HANDOVER_STATUS, age, parseJson, fileUrl } from '../utils'
 
 const INSURANCE_TYPES = ['职工医保', '城乡居民医保', '新农合', '自费']
 
@@ -63,6 +63,7 @@ export default function PatientDetail() {
             { key: 'logs', label: '训练反馈', children: <LogsTab patientId={id} canEdit={canEdit} /> },
             { key: 'corrections', label: '视频纠错', children: <CorrectionTab patientId={id} canEdit={canEdit} /> },
             { key: 'escalations', label: '疼痛升级', children: <EscalationTab patientId={id} /> },
+            { key: 'handovers', label: '照护交接', children: <HandoverTab patientId={id} canEdit={canEdit} /> },
             { key: 'timeline', label: '患者时间线', children: <TimelineTab patientId={id} /> },
             { key: 'insurance', label: '医保结算', children: <InsuranceTab patientId={id} canEdit={canEdit} insuranceType={patient.insuranceType} /> }
           ]}
@@ -470,6 +471,7 @@ function LogsTab({ patientId, canEdit }) {
                   {log.swellingNumbness && <Tag color="red">肿胀/麻木</Tag>}
                   {log.nightPainWorse && <Tag color="purple">夜间痛加重</Tag>}
                   {log.companionAvailable === false && <Tag color="orange">无法陪练</Tag>}
+                  {log.submittedBy && <Tag color="blue">提交人：{log.submittedBy.name}</Tag>}
                 </Space>
               }
               description={
@@ -628,6 +630,149 @@ function CorrectionTab({ patientId, canEdit }) {
               <Button type="primary" onClick={() => review(true)}>已掌握 ✓（闭环）</Button>
               <Button danger onClick={() => review(false)}>未掌握（继续纠正）</Button>
             </Space>
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+/* ---------------- 照护人交接 ---------------- */
+function HandoverTab({ patientId, canEdit }) {
+  const [list, setList] = useState([])
+  const [createOpen, setCreateOpen] = useState(false)
+  const [familyUsers, setFamilyUsers] = useState([])
+  const [comparison, setComparison] = useState(null)
+  const [form] = Form.useForm()
+
+  const load = () => api.get(`/patients/${patientId}/handovers`).then((res) => setList(res.data))
+  useEffect(() => {
+    load()
+    if (canEdit) api.get('/users?role=FAMILY').then((res) => setFamilyUsers(res.data)).catch(() => {})
+  }, [patientId])
+
+  const create = async () => {
+    const values = await form.validateFields()
+    await api.post(`/patients/${patientId}/handovers`, values)
+    message.success('交接已发起：新照护人登录后须完成三项确认才能打卡')
+    setCreateOpen(false)
+    form.resetFields()
+    load()
+  }
+
+  const openCompare = (h) => {
+    api.get(`/handovers/${h.id}/comparison`).then((res) => setComparison(res.data))
+  }
+
+  const statCard = (title, s, color) => (
+    <Card size="small" style={{ flex: 1, borderColor: color }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 13, color: '#888' }}>{s.start} ~ {s.end}</div>
+      <div style={{ marginTop: 6, fontSize: 13 }}>
+        打卡 {s.loggedDays}/7 天（依从性 {s.adherencePercent}%）<br />
+        平均完成率 {s.avgCompletion}%<br />
+        平均训练后疼痛 {s.avgPainAfter} 分<br />
+        主要提交人：{s.mainSubmitter}
+      </div>
+    </Card>
+  )
+
+  return (
+    <div>
+      {canEdit && (
+        <Button type="primary" icon={<PlusOutlined />} style={{ marginBottom: 12 }} onClick={() => setCreateOpen(true)}>
+          发起照护人更换
+        </Button>
+      )}
+      {list.length === 0 && <Empty description="无照护人交接记录" />}
+      <List
+        dataSource={list}
+        renderItem={(h) => (
+          <List.Item
+            actions={h.status === 'CONFIRMED'
+              ? [<Button key="cmp" size="small" type="primary" ghost onClick={() => openCompare(h)}>前后对比分析</Button>]
+              : undefined}
+          >
+            <List.Item.Meta
+              title={
+                <Space wrap>
+                  <Tag color={HANDOVER_STATUS[h.status]?.color}>{HANDOVER_STATUS[h.status]?.label}</Tag>
+                  <b>{h.oldCaregiverName || '—'}（{h.oldCaregiverRelation || '-'}）→ {h.newCaregiverName}（{h.newCaregiverRelation || '-'}）</b>
+                  <span style={{ color: '#888', fontSize: 12 }}>{h.createdAt?.slice(0, 16)} 由 {h.createdBy} 发起</span>
+                </Space>
+              }
+              description={
+                <div style={{ fontSize: 13 }}>
+                  {h.reason && <div>更换原因:{h.reason}</div>}
+                  <div>
+                    三项确认：
+                    <Tag color={h.precautionsConfirmed ? 'green' : 'default'}>动作注意事项{h.precautionsConfirmed ? '✓' : '待确认'}</Tag>
+                    <Tag color={h.contraindicationsConfirmed ? 'green' : 'default'}>禁忌风险{h.contraindicationsConfirmed ? '✓' : '待确认'}</Tag>
+                    <Tag color={h.devicesConfirmed ? 'green' : 'default'}>器具使用{h.devicesConfirmed ? '✓' : '待确认'}</Tag>
+                    {h.confirmedAt && <span style={{ color: '#888' }}>{h.confirmedBy} 于 {h.confirmedAt?.slice(0, 16)} 确认</span>}
+                  </div>
+                  {h.firstWeekEnd && (
+                    <div style={{ marginTop: 4 }}>
+                      首周观察期：{h.confirmedAt?.slice(0, 10)} ~ {h.firstWeekEnd}
+                      {h.firstWeekEnd >= new Date().toISOString().slice(0, 10)
+                        ? <Tag color="geekblue" style={{ marginLeft: 4 }}>观察中（新照护人反馈重点标记）</Tag>
+                        : <Tag style={{ marginLeft: 4 }}>已结束</Tag>}
+                    </div>
+                  )}
+                  {h.nurseGuidanceNote && (
+                    <div style={{ marginTop: 4, color: '#ad6800' }}>
+                      护士电话指导（{h.nurseGuidanceBy} {h.nurseGuidanceAt?.slice(0, 16)}）：{h.nurseGuidanceNote}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                    旧照护人{h.oldCaregiverName ? `（${h.oldCaregiverName}）` : ''}的历史打卡反馈保留在「训练反馈」中，可按提交人追溯。
+                  </div>
+                </div>
+              }
+            />
+          </List.Item>
+        )}
+      />
+
+      {/* 发起交接 */}
+      <Modal title="发起照护人更换" open={createOpen} onOk={create} onCancel={() => setCreateOpen(false)} okText="发起交接">
+        <Form form={form} layout="vertical">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+            <Form.Item name="newCaregiverName" label="新照护人姓名" rules={[{ required: true, message: '必填' }]}>
+              <Input placeholder="如：张强" />
+            </Form.Item>
+            <Form.Item name="newCaregiverRelation" label="与患者关系">
+              <Input placeholder="如：儿子 / 祖母" />
+            </Form.Item>
+            <Form.Item name="newCaregiverPhone" label="联系电话">
+              <Input placeholder="手机号" />
+            </Form.Item>
+            <Form.Item name="newFamilyUserId" label="绑定家属账号（患者档案将切换到该账号）">
+              <Select allowClear showSearch optionFilterProp="label"
+                options={familyUsers.map((u) => ({ value: u.id, label: `${u.name}（${u.username}）` }))} />
+            </Form.Item>
+          </div>
+          <Form.Item name="reason" label="更换原因（写入时间线）">
+            <Input.TextArea rows={2} placeholder="如：女儿工作外派，儿子接手陪练" />
+          </Form.Item>
+          <div style={{ fontSize: 12, color: '#888' }}>
+            发起后：患者档案照护人立即切换；新照护人须登录完成 动作注意事项/禁忌风险/器具使用 三项确认后才能打卡；旧照护人历史反馈记录保留。
+          </div>
+        </Form>
+      </Modal>
+
+      {/* 前后对比分析 */}
+      <Modal title="照护人更换前后对比（各 7 天）" open={!!comparison} footer={null} onCancel={() => setComparison(null)} width={720}>
+        {comparison && (
+          <div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              {statCard(`更换前（${comparison.handover.oldCaregiverName || '旧照护人'}）`, comparison.before, '#91caff')}
+              {statCard(`更换后首周（${comparison.handover.newCaregiverName}）`, comparison.after, '#ffa39e')}
+            </div>
+            <Alert style={{ marginTop: 12 }} type="warning" showIcon message="判读提示" description={comparison.hint} />
+            <div style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
+              判读逻辑：更换后完成率/依从性明显下滑或疼痛升高，而更换前趋势平稳 → 倾向陪练理解偏差；前后接近 → 倾向患者自身状态变化。
+            </div>
           </div>
         )}
       </Modal>

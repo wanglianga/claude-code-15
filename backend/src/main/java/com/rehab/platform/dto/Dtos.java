@@ -127,6 +127,24 @@ public final class Dtos {
     public record ClearRiskRequest(String note) {
     }
 
+    /** 发起照护人更换交接 */
+    public record HandoverRequest(@NotBlank(message = "请填写新照护人姓名") String newCaregiverName,
+                                  String newCaregiverRelation,
+                                  String newCaregiverPhone,
+                                  Long newFamilyUserId,
+                                  String reason) {
+    }
+
+    /** 新照护人三项确认（动作注意事项 / 禁忌风险 / 器具使用） */
+    public record HandoverConfirmRequest(@NotNull(message = "请确认动作注意事项") Boolean precautions,
+                                         @NotNull(message = "请确认禁忌风险") Boolean contraindications,
+                                         @NotNull(message = "请确认器具使用") Boolean devices) {
+    }
+
+    /** 护士电话指导记录 */
+    public record NurseGuidanceRequest(@NotBlank(message = "请填写电话指导内容") String note) {
+    }
+
     public record FeedbackRequest(@NotBlank(message = "反馈内容不能为空") String feedback) {
     }
 
