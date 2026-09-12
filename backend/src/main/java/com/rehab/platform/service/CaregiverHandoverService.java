@@ -13,7 +13,6 @@ import com.rehab.platform.model.User;
 import com.rehab.platform.repository.CaregiverHandoverRepository;
 import com.rehab.platform.repository.PatientRepository;
 import com.rehab.platform.repository.TrainingLogRepository;
-import com.rehab.platform.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,7 +33,6 @@ public class CaregiverHandoverService {
 
     private final CaregiverHandoverRepository handoverRepository;
     private final PatientRepository patientRepository;
-    private final UserRepository userRepository;
     private final TrainingLogRepository trainingLogRepository;
     private final PatientService patientService;
     private final TimelineService timelineService;
@@ -65,21 +63,21 @@ public class CaregiverHandoverService {
         h.setReason(req.reason());
         h.setCreatedBy(SecurityUtils.currentUser().getName());
 
-        // 切换患者档案照护人与绑定账号（新照护人需登录完成三项确认）
+        // 切换患者档案照护人与绑定账号（新照护人须使用自己的家属账号，不能沿用旧照护人账号）
         patient.setCaregiverName(req.newCaregiverName());
         patient.setCaregiverRelation(req.newCaregiverRelation());
         patient.setCaregiverPhone(req.newCaregiverPhone());
-        if (req.newFamilyUserId() != null) {
-            User newUser = userRepository.findById(req.newFamilyUserId())
-                    .orElseThrow(() -> new BusinessException(404, "新照护人账号不存在"));
-            if (newUser.getRole() != Role.FAMILY) {
-                throw new BusinessException("只能绑定家属角色账号");
-            }
-            h.setNewFamilyUser(newUser);
-            patient.setFamilyUser(newUser);
-        } else {
-            h.setNewFamilyUser(patient.getFamilyUser());
+        if (req.newFamilyUserId() == null) {
+            throw new BusinessException("请为新照护人选择家属账号：不能沿用旧照护人账号，"
+                    + "可先在患者管理中为其创建家属账号");
         }
+        if (patient.getFamilyUser() != null && patient.getFamilyUser().getId().equals(req.newFamilyUserId())) {
+            throw new BusinessException("新照护人账号与当前绑定账号相同，无需更换");
+        }
+        // 校验账号存在、为家属角色、且未绑定到其他患者（重复绑定会返回 400 而非 500）
+        User newUser = patientService.resolveBindableFamilyUser(req.newFamilyUserId(), patientId);
+        h.setNewFamilyUser(newUser);
+        patient.setFamilyUser(newUser);
         patientRepository.save(patient);
         CaregiverHandover saved = handoverRepository.save(h);
 

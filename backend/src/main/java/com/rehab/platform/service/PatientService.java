@@ -117,8 +117,29 @@ public class PatientService {
             p.setTherapist(SecurityUtils.currentUser());
         }
         if (req.familyUserId() != null) {
-            userRepository.findById(req.familyUserId()).ifPresent(p::setFamilyUser);
+            p.setFamilyUser(resolveBindableFamilyUser(req.familyUserId(), p.getId()));
         }
+    }
+
+    /**
+     * 校验并返回可绑定的家属账号：
+     * 账号必须存在、为家属角色，且未绑定到其他患者（同一账号重复绑定会导致家属端查询异常）。
+     *
+     * @param excludePatientId 允许保持绑定的患者（更新自身/交接至本患者时传入），其余情况传 null
+     */
+    public User resolveBindableFamilyUser(Long familyUserId, Long excludePatientId) {
+        User u = userRepository.findById(familyUserId)
+                .orElseThrow(() -> new BusinessException(404, "家属账号不存在"));
+        if (u.getRole() != Role.FAMILY) {
+            throw new BusinessException("账号「" + u.getUsername() + "」不是家属角色，不能绑定为患者家属");
+        }
+        patientRepository.findByFamilyUserId(familyUserId).ifPresent(existing -> {
+            if (excludePatientId == null || !existing.getId().equals(excludePatientId)) {
+                throw new BusinessException("账号「" + u.getName() + "（" + u.getUsername()
+                        + "）」已绑定患者「" + existing.getName() + "」，不能重复绑定到其他患者");
+            }
+        });
+        return u;
     }
 
     public Map<String, Object> riskOf(Patient patient) {

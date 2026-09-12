@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import {
   Tabs, Descriptions, Tag, Button, Card, Table, Modal, Form, Input, InputNumber,
-  Select, DatePicker, Switch, Space, Statistic, Row, Col, message, Popconfirm, Empty, List
+  Select, DatePicker, Switch, Space, Statistic, Row, Col, message, Popconfirm, Empty, List, Alert, Checkbox
 } from 'antd'
 import { PlusOutlined, MinusCircleOutlined, ToolOutlined } from '@ant-design/icons'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -747,8 +747,9 @@ function HandoverTab({ patientId, canEdit }) {
             <Form.Item name="newCaregiverPhone" label="联系电话">
               <Input placeholder="手机号" />
             </Form.Item>
-            <Form.Item name="newFamilyUserId" label="绑定家属账号（患者档案将切换到该账号）">
-              <Select allowClear showSearch optionFilterProp="label"
+            <Form.Item name="newFamilyUserId" label="绑定家属账号（患者档案将切换到该账号）"
+              rules={[{ required: true, message: '请为新照护人选择家属账号' }]}>
+              <Select showSearch optionFilterProp="label" placeholder="不能沿用旧照护人账号"
                 options={familyUsers.map((u) => ({ value: u.id, label: `${u.name}（${u.username}）` }))} />
             </Form.Item>
           </div>
@@ -756,7 +757,7 @@ function HandoverTab({ patientId, canEdit }) {
             <Input.TextArea rows={2} placeholder="如：女儿工作外派，儿子接手陪练" />
           </Form.Item>
           <div style={{ fontSize: 12, color: '#888' }}>
-            发起后：患者档案照护人立即切换；新照护人须登录完成 动作注意事项/禁忌风险/器具使用 三项确认后才能打卡；旧照护人历史反馈记录保留。
+            发起后：患者档案照护人立即切换；新照护人须使用<b>本人专属家属账号</b>（不能沿用旧照护人账号，且一个账号只能绑定一位患者）登录完成 动作注意事项/禁忌风险/器具使用 三项确认后才能打卡；旧照护人历史反馈记录保留。
           </div>
         </Form>
       </Modal>
